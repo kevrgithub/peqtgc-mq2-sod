@@ -30,6 +30,10 @@
 #Event Invited          "#*#To join the group, click on the 'FOLLOW' option, or 'DISBAND' to cancel#*#"
 #Event Invited          "#*#To join the group, click on the 'FOLLOW' option, or 'DECLINE' to cancel#*#"
 
+|- Raid invites
+#Event RaidInvited		"#*#invites you to join a raid.#*#"
+#Event RaidInvite		"#1# tells the guild, '#*#raid invite#*#'"
+
 |- These event's are used to trigger a chat event via BCS
 #Event IRC              "<#1#> #*# #2#"
 #Event IRC				"[#1#(msg)] #2#"
@@ -73,8 +77,8 @@
 #Event Resolute			"[#1#(msg)] Resolute#*#"
 
 |- Event for clicking off a buff
-#Event ClickOff			"<#1#> #*# Remove #1#"
-#Event ClickOff			"[#1#(msg)] Remove #1#"
+#Event ClickOff			"<#*#> #*# Remove #1#"
+#Event ClickOff			"[#*#(msg)] Remove #1#"
 
 |- Click the nearest door
 #Event ClickDoor		"<#1#> #*# ClickDoor"
@@ -99,11 +103,18 @@
 |- Event for DPS burn
 #Event BurnDmg			"<#1#> #*# BURN #2#"
 
+|- Find items
+#Event FindItem			"<#*#> #*# Find Item #1#"
+
 |- Event for counting toons near a player
 #Event CountBotsNearMe	"[#*#(msg)] #*#Count Bots#*#"
 
 |- Event for toggling ranged attack on Berz or Ranger
 #Event ToggleRanged     "<#*#> #*# Use Ranged #1#"
+
+#Event Rez				"<#1#> #*# rez"
+#Event Rez				"#1# tells you, 'rez'"
+#Event Rez				"#1# tells the group, 'rez'"
 
 | #################################################################
 | # Will move to and hail the Chat Sender's target.
@@ -307,13 +318,12 @@ sub Event_Combat(Combat,MainAssist,ToTarget,Distance)
 	
 	/assist ${MainAssist}
 	/delay 2s ${Target.Name.Equal[${ToTarget}]}
-	
 	/if (!${Target.Name.Equal[${ToTarget}]}) /return	
 	/if (${Me.State.Equal[Feign Death]}) /return
 	
 	/varset Attacking TRUE
 	/varset AttackTarget ${Target.ID}
-	
+
 	/if (${Me.Class.Name.Equal[Shaman]} || ${Me.Class.Name.Equal[Enchanter]}) {
 		/call DebuffCycle
 	}
@@ -403,8 +413,9 @@ Sub GetAttackTarget
 Sub DoUpdates
 	/if (!${Defined[AmCamping]}) /declare AmCamping outer FALSE
 	/if (!${Target.ID} && ${Attacking}) /varset Attacking FALSE
-	/if (!${Target.Type.Equal[NPC]} && ${Attacking}) {
+	/if (!${Target.Type.Equal[NPC]} && !${Target.Type.Equal[Pet]} && ${Attacking}) {
 		/varset Attacking FALSE
+		| /gsay I AM HERE! --> ${Target.Type}
 		/attack off
 	}
 	
@@ -413,13 +424,13 @@ Sub DoUpdates
 	|- Ranger stuff
 	/if (${Me.Class.Name.Equal[Ranger]}) {
 		/if (${Me.Combat} && ${Target.Distance} < 25 && ${Me.AbilityReady[Kick]}) /doability "Kick"
-		/if (${RangedAttack} && ${Target.Type.Equal[NPC]} && ${Target.PctHPs} > 0) /face fast nolook
+		/if (${RangedAttack} && ${Target.PctHPs} > 0) /face fast nolook
 		/return
 	}
 	
 	|- Monk stuff
 	/if (${Me.Class.Name.Equal[Monk]}) {
-		/if (${Me.Combat} && ${Target.Distance} < 35) /doability "Flying Kick"
+		/if (${Me.Combat} && ${Target.Distance} < 35 && ${Me.AbilityReady[Flying Kick]}) /doability "Flying Kick"
 		/if (${Me.Combat} && ${Me.PctHPs} < 20) /doability "Feign Death"
 		/return
 	}
@@ -516,21 +527,8 @@ Sub InMyGroup(string szCharName)
 | # Buffs every group via existing buff routines.
 | #################################################
 Sub Event_BuffAll
-	|- Reno
-	/if (${Me.CleanName.Equal[Reno]}) {
+	/if (${Group.Leader.Name.Equal[${Me.CleanName}]}) {
 		/bct Elena buff
-		/bct Asystole buff
-		/bct Mezzem buff
-		/bct Allannon buff
-	|- Geko
-	} else /if (${Me.CleanName.Equal[Geko]}) {
-		/bct Narga buff
-		/bct Asystole buff
-		/bct Mezzem buff
-		/bct Allannon buff
-	|- Xtravagent
-	} else /if (${Me.CleanName.Equal[Xcess]}) {
-		/bct Xcess buff
 		/bct Asystole buff
 		/bct Mezzem buff
 		/bct Allannon buff
@@ -623,11 +621,11 @@ Sub Event_Resolute()
 | #############################################################
 | # Clicks off a specified buff.
 | #
-| # @PARAM - string line - The line that triggered the event.
-| # @PARAM - string buff - The buff to be removed.
+| # @PARAM - string Line - The line that triggered the event.
+| # @PARAM - string BuffToRemove - The buff to be removed.
 | #############################################################
-Sub Event_ClickOff(string line, string buff)
-    /if (${Me.Buff[${buff}].ID}) /nomodkey /notify BuffWindow Buff${Math.Calc[${Me.Buff[${buff}].ID}-1].Int} leftmouseup
+Sub Event_ClickOff(string Line, string BuffToRemove)
+    /if (${Me.Buff[${BuffToRemove}].ID}) /nomodkey /notify BuffWindow Buff${Math.Calc[${Me.Buff[${BuffToRemove}].ID}-1].Int} leftmouseup
 /return
 
 | #########################################################
@@ -935,9 +933,9 @@ Sub CheckCasterState
 	|- SHAMAN
 	} else /if (${Me.Class.Name.Equal[Shaman]}) {
 		|- Canni 4
-		/if (!${Defined[CanniMana]}) /declare CanniMana int outer 55
+		/if (!${Defined[CanniMana]}) /declare CanniMana int outer 80
 		/if (!${Defined[SpellCanni]}) /declare SpellCanni outer "Cannibalize IV"
-		/if (!${Me.Combat} && !${Me.Moving} && ${Me.PctMana} <= ${CanniMana} && (${Me.SpellReady[${SpellCanni}]} || !${Me.Gem[${SpellCanni}]}) && ${Me.PctHPs} > 65) {
+		/if (!${Me.Combat} && !${Me.Moving} && ${Me.PctMana} <= ${CanniMana} && (${Me.SpellReady[${SpellCanni}]} || !${Me.Gem[${SpellCanni}]}) && ${Me.PctHPs} > 65 && ${Stick.Status.NotEqual[ON]} && !${Attacking}) {
 			/call cast ${SpellCanni} gem8 1s
 		}
 		
@@ -961,10 +959,15 @@ Sub CheckCasterState
 		}
 		
 		|- Mana Robe kept getting left on. This just equips my primary robe if it isn't equipped.
-		/if (${InvSlot[17].Item.Name.Equal[Mana Robe]}) {
+		/if ((${InvSlot[17].Item.Name.Equal[Mana Robe]} || ${InvSlot[17].Item.Name.Equal[Koadic's Robe of Heightened Focus]}) && ${FindItemCount[Robe of Secrets]} > 0) {
 			/exchange "Robe of Secrets" 17
 		}
 		
+		/if (!${Me.Buff[Improved Familiar].ID} && ${Me.AltAbilityReady[Improved Familiar]}) {
+			/pet get lost
+			/call cast 167 alt
+			/pet get lost
+		}
 		|- Mana Robe
 		| /if (${Me.State.Equal[Stand]} && (${Me.PctMana} < 50) && (${Me.PctHPs} > 70) && !${Me.Moving} && ${Stick.Status.Equal[OFF]} && ${Me.Casting.ID} <= 0 && !${Attacking}) {
 		|	/call Cast "Mana Robe" item
@@ -993,6 +996,42 @@ Sub GetClosestNPC(int Radius)
 		/bca Combat ${Target.Name} 12
 		/varset Assisting TRUE
 	} 
+/return
+
+| ##
+| #
+| ##
+Sub Event_FindItem(string Line, string ToFind)
+	/declare Found bool local TRUE
+	/if (${FindItemCount[${ToFind}]} > 0) {
+		/say I have ${FindItemCount[${ToFind}]} of ${FindItem[${ToFind}]} on me.
+	} else {
+		/varset Found FALSE
+	} 
+	
+	/if (${FindItemBankCount[${ToFind}]} > 0) {
+		/say I have ${FindItemBankCount[${ToFind}]} of ${FindItemBank[${ToFind}]} in my bank.
+		/varset Found FALSE
+	}
+	
+	/if (!${Found}) {
+		/say No item found!
+	}
+/return
+
+| ##
+| #
+| ##
+Sub Event_Rez(string Line, string Sender)
+	/if (${FindItemCount[Water Sprinkler of Nem Ankh]} < 1) /return
+
+	/target "${Sender}'s corpse"
+	/delay 3s ${Target.CleanName.Equal[${Sender}'s corpse]}
+	
+	/if (${Target.CleanName.NotEqual[${Sender}'s corpse]}) /return
+	
+	/call cast "Water Sprinkler of Nem Ankh" item
+	
 /return
 
 | ##
@@ -1059,3 +1098,42 @@ Sub IniToDynArray(FileName,SectionName,NameOfArray)
 	}
 	
 /return 
+
+| ##
+| #
+| ##
+Sub DoClickyWithTimer(string ToClick, int RecastTime)
+	/if (!${Me.Moving} && ${FindItemCount[${ToClick}]} > 0 && ${Target.Distance} <= ${FindItem[${ToClick}].Spell.Range} && (!${Defined[t${FindItem[${ToClick}].Spell.ID}]} || ${t${FindItem[${ToClick}].Spell.ID}} == 0)) {
+		/call Cast "${ToClick}" item
+		/gsay Using item ${ToClick} !@!
+		/if ( !${Defined[t${FindItem[${ToClick}].Spell.ID}]} ) {
+			/declare t${FindItem[${ToClick}].Spell.ID}    timer    outer
+		}
+
+		| The re-use timer on the item
+		/varset t${FindItem[${ToClick}].Spell.ID} ${RecastTime}
+		
+		/return TRUE
+	}
+	
+/return FALSE
+
+| ##
+| #
+| ##
+Sub Event_RaidInvited
+	/raidaccept
+/return
+
+| ##
+| #
+| ##
+Sub Event_RaidInvite(string Line, string Sender)
+	/if (${SpawnCount[pc ${Sender}]} < 1) /return
+	
+	/if (${Raid.Leader.Name.Equal[${Me.CleanName}]} || ${Me.Name.Equal[Reno]}) {
+		/target pc ${Sender}
+		/delay 3s ${Target.CleanName.Equal[${Sender}]}
+		/raidinvite
+	}
+/return

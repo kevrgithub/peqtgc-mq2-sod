@@ -1,7 +1,7 @@
 #Event   Enrageon         "#*#|${Target.CleanName}| has become ENRAGED#*#" 
 #Event   Enrageoff        "#*#|${Target.CleanName}| is no longer enraged#*#" 
-#Event   ItHasDied         "#1# has been slain by #*#" 
-#Event   ItHasDied         "#*#You have slain #1#!" 
+#Event   ItHasDied         "#*# has been slain by #*#" 
+#Event   ItHasDied         "#*#You have slain #*#" 
 
 | ##
 | #
@@ -47,14 +47,14 @@ Sub CheckMeleeStatus
 	/if (!${Defined[Attacking]}) /declare Attacking outer FALSE
 	/if (!${Defined[AttackTarget]}) /declare AttackTarget int outer 0
 	
-	/if (${DoTaunt} && ${Me.Combat} && ${Target.Type.Equal[NPC]}) {
+	/if (${DoTaunt} && ${Me.Combat} && (${Target.Type.Equal[NPC]} || ${Target.Type.Equal[Pet]})) {
 		/if (${Me.AbilityReady[Taunt]} && ${Target.Distance} < 30) /doability "Taunt"
 		/if (${Me.Class.Name.Equal[Warrior]} && ${Target.Distance} < 100) {
 			/if (!${Defined[InciteTimer]}) /declare InciteTimer timer outer 0
 			
 			/if (${InciteTimer} == 0) {
-				| /disc Incite
-				/varset InciteTimer 310
+				/disc Bellow of the Mastruq
+				/varset InciteTimer 410
 			}
 		}
 	}
@@ -102,11 +102,9 @@ Sub Event_Enrageoff
 | #
 | #
 | ##
-Sub Event_ItHasDied(string Line, string Mob)
+Sub Event_ItHasDied(string Line)
 	/if (!${Defined[IsEnraged]}) /declare IsEnraged outer FALSE
 	
-	/if (${Spawn[id ${AttackTarget}].CleanName.Equal[${Mob}]}) {
-		/varset IsEnraged FALSE
-	}
+	/varset IsEnraged FALSE
 
 /return

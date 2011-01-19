@@ -1,0 +1,22 @@
+#chat tell
+#chat group
+
+Sub Main    
+
+	/echo Summoning people....
+
+| #############    
+| # Main Loop 
+| ############# 
+:Main_Loop 	
+   /doevents 
+	
+	/goto :Main_Loop
+/return
+
+Sub Event_Chat(string ChatType,string ChatSender,string ChatText)
+	/if (${ChatText.Equal[summon]} && ${ChatType.Equal[TELL]}) {
+		/say #summon ${ChatSender}
+		/return 
+	}
+/return

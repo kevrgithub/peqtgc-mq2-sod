@@ -71,6 +71,10 @@ Sub HealSetup
 	
 	/if (!${Defined[TankHealGem]}) /declare TankHealGem string outer "gem${Me.Gem[${TankHeal}]}"
 	
+	/if (${FindItemCount[Aged Shissar Apothic Staff]} || ${FindItemCount[Aged Hammer of the Dragonborn]} || ${FindItemCount[Aged Dragon Spine Staff]}) {
+		/declare ClickHeal outer TRUE
+	}
+	
 	/echo Heal system has been loaded.
 /return
 
@@ -103,15 +107,33 @@ Sub MakeHealINI
 	
 /return
 
+| ##
+| #
+| ##
+Sub UseVeeshanHealClicky
+	/declare RetVal bool local FALSE
+	/if (${Me.Class.Name.Equal[Cleric]} && ${FindItemCount[Aged Shissar Apothic Staff]}) {
+		/call DoClickyWithTimer "Aged Shissar Apothic Staff" 2100
+		/if (${Macro.Return.Equal[TRUE]}) /varset RetVal TRUE
+	} else /if (${Me.Class.Name.Equal[Shaman]} && ${FindItemCount[Aged Hammer of the Dragonborn]}) {
+		/call DoClickyWithTimer "Aged Hammer of the Dragonborn" 2100
+		/if (${Macro.Return.Equal[TRUE]}) /varset RetVal TRUE
+	} else /if (${Me.Class.Name.Equal[Druid]} && ${FindItemCount[Aged Dragon Spine Staff]}) {
+		/call DoClickyWithTimer "Aged Dragon Spine Staff" 2100
+		/if (${Macro.Return.Equal[TRUE]}) /varset RetVal TRUE
+	}
+	
+/return ${RetVal}
+
 | ##########################################
 | # Used to check the MainTank's hitpoints.
 | ##########################################
 Sub CheckTank
 	|- Check to see if target is in zone
 	/if (${SpawnCount[pc ${MainTank}]} > 0) {
-		|- Make sure they are not in our group or in NetBots....
+		|- Make sure they are not in our group.
 		/call InMyGroup ${MainTank}	
-		/if (${Macro.Return.Equal[FALSE]} || !${NetBots[${MainTank}]}) {
+		/if (${Macro.Return.Equal[FALSE]} && !${NetBots[${MainTank}]}) {
 			|- Make sure we have the proper target
 			/target pc ${MainTank}
 			/delay 2s ${Target.Name.Equal[${MainTank}]}
@@ -136,6 +158,7 @@ Sub CheckTank
 | # the "outer" scope.
 | ##############################################################
 Sub CheckGroupHeals		
+	/if (${Heal.WorstGroup.Type.NotEqual[PC]}) /return
 	|- Casters(wis & int) then Plate, then Melee(bard here)
 	|- Add them to the array if they are in need of a heal
 	/if (${Heal.WorstGroup.Class.Name.Equal[Shaman]} || ${Heal.WorstGroup.Class.Name.Equal[Cleric]} || ${Heal.WorstGroup.Class.Name.Equal[Wizard]} || ${Heal.WorstGroup.Class.Name.Equal[Magician]} || ${Heal.WorstGroup.Class.Name.Equal[Enchanter]} || ${Heal.WorstGroup.Class.Name.Equal[Necromancer]} || ${Heal.WorstGroup.Class.Name.Equal[Druid]}) {
@@ -159,11 +182,14 @@ Sub CheckGroupHeals
 | # for all healing.
 | ###############################################################################
 Sub Check_HPs
+	|- Start witha  Divine Arb check...
+	/if (${Me.AltAbilityReady[Divine Arbitration]}) /call DivineArbitration
+	
 	|- Check the tank's hitpoints before we start to make sure we have time to check everyone else
    	/call CheckTank
 
 	|- Do we use a group heal?
-	/if ((${Me.Class.Name.Equal[Cleric]} || ${Me.Class.Name.Equal[Paladin]}) && ${Heal.InjuredCount[75]} > 2) /call GroupHeal
+	/if ((${Me.Class.Name.Equal[Cleric]} || ${Me.Class.Name.Equal[Paladin]}) && ${Heal.InjuredCount[65]} > 2) /call GroupHeal
 	
 	|- Check our group for heals
 	/if (${Heal.InjuredCount} > 0) /call CheckGroupHeals
@@ -177,6 +203,7 @@ Sub Check_HPs
 | #
 | ##	
 Sub CheckNetBotsHeals
+	/if (${Heal.WorstNetBots.Type.NotEqual[PC]}) /return
 	|- Casters(wis & int) then Plate, then Melee(bard here)
 	|- Add them to the array if they are in need of a heal
 	/if (${Heal.WorstNetBots.Class.Name.Equal[Shaman]} || ${Heal.WorstNetBots.Class.Name.Equal[Cleric]} || ${Heal.WorstNetBots.Class.Name.Equal[Wizard]} || ${Heal.WorstNetBots.Class.Name.Equal[Magician]} || ${Heal.WorstNetBots.Class.Name.Equal[Enchanter]} || ${Heal.WorstNetBots.Class.Name.Equal[Necromancer]} || ${Heal.WorstNetBots.Class.Name.Equal[Druid]}) {
@@ -198,10 +225,12 @@ Sub CheckNetBotsHeals
 | # Casts the group heal if 3 or more group players are in need.
 | ######################################################################
 Sub GroupHeal
-	/gsay <<< ${GroupHeal} >>>			
-	/call cast "${GroupHeal}"
-	|- Delay to give everyones hp time to update
-	/delay 50
+	/if (${Me.CurrentMana} > ${Spell[${GroupHeal}].Mana}) {
+		/gsay <<< ${GroupHeal} >>>			
+		/call cast "${GroupHeal}"
+		|- Delay to give everyones hp time to update
+		/delay 50
+	}
 /return
 
 | #################################################
@@ -211,6 +240,7 @@ Sub GroupHeal
 Sub CancelHeal
 	/if (${Target.PctHPs} >= 90) /call Interrupt
 	/if (${Target.Distance} > 200) /call Interrupt
+	/if (${Me.AltAbilityReady[Divine Arbitration]}) /call DivineArbitration
 	/doevents StartCast
 /return
 
@@ -233,9 +263,16 @@ Sub CastHeal(string HealSpell, string HealTarget, bool DontStop)
 		} else {			
 			/target ${HealTarget}
 			/delay 2s ${Target.Name.Equal[${HealTarget}]}
+			/if (${Target.Name.NotEqual[${HealTarget}]}) /return
+			
+			|- Do we have a heal clicky item that we should use first?
+			/if (${ClickHeal}) {
+				/call UseVeeshanHealClicky
+				/if (${Macro.Return.Equal[TRUE]}) /return
+			}
 			
 			|- If right target and in range, cast the spell
-			/if (${Target.Name.Equal[${HealTarget}]} && (${Target.Distance} <= ${Spell[${HealSpell}].Range})) {	
+			/if (${Target.Name.Equal[${HealTarget}]} && (${Target.Distance} <= ${Spell[${HealSpell}].Range}) && ${Target.Type.NotEqual[Corpse]}) {	
 				/gsay <<< ${HealSpell} -> ${HealTarget} >>>			
 				/bca <<< ${HealSpell} -> ${HealTarget} >>>
 				/call cast "${HealSpell}" gem${Me.Gem[${HealSpell}]} 0 CancelHeal
@@ -296,9 +333,23 @@ Sub Event_StartCast(string line, string tank)
 | #
 | ##
 Sub BeginCHRotation
-	/if (!${Defined[BHServer]}) /declare BHServer string outer "192.168.0.137"
-	/if (!${Defined[BHPort]}) /declare BHPort int outer 2113
+	/if (!${Defined[BHServer]}) /declare BHServer string outer "192.168.1.136"
+	/if (!${Defined[BHPort]}) /declare BHPort int outer 21
 	
 	/bhcmd connect ${BHServer} ${BHPort}
+	
+/return
+
+| ##
+| #
+| ##
+Sub DivineArbitration
+	/if (${Group.Members} < 3) /return
+	
+	/if ((${Math.Calc[${Heal.UninjuredCount[80]} - 1]} > ${Heal.InjuredCount[35]}) && ${Heal.InjuredCount[35]} > 0) {
+		/call Interrupt
+		/gsay <<< DIVINE ARBITRATION >>>
+		/call cast "Divine Arbitration" alt
+	}
 	
 /return

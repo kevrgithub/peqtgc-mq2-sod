@@ -30,10 +30,10 @@ Sub RollerCoast
 	/if (!${Defined[bRollerCoastOn]}) /declare bRollerCoastOn bool outer FALSE
 
 	|- Change this variable value to change the default roll time (enter in 10ths of a second).
-	/if (!${Defined[iDefaultRollTimerValue]}) /declare iDefaultRollTimerValue int outer 1200
+	/if (!${Defined[iDefaultRollTimerValue]}) /declare iDefaultRollTimerValue int outer 600
 	
 	|- Holder variable for changing the timer without breaking rolls that are in progress.
-	/if (!${Defined[iNewDefaultRollTimerValue]}) /declare iNewDefaultRollTimerValue int outer 1200
+	/if (!${Defined[iNewDefaultRollTimerValue]}) /declare iNewDefaultRollTimerValue int outer 600
 	
 	|- In Progress counter, > 0 if tracking rolls
 	/if (!${Defined[iRollsInProgress]}) /declare iRollsInProgress int outer 0
@@ -96,6 +96,9 @@ Sub RollerCoast
 | ##
 Sub Event_RollerCoastOn(line,sSender)
 	/if (${Me.Name.NotEqual[${sSender}]}) /return
+	
+	/call RollerCoast
+	
 	/if (${bRollerCoastOn}) {
 		/varset bRollerCoastOn FALSE
 		/echo RollerCoast DISABLED.
@@ -275,6 +278,7 @@ Sub Event_LootTimerSet(line,sSender,iTimerValue)
 Sub Event_ForceAward(line,sSender,iLootRollNumber)
 	/if (${Me.Name.NotEqual[${sSender}]}) /return
 	/varset tRollTimer${iLootRollNumber} 0
+	/call RollerCoast
 /return
 
 
