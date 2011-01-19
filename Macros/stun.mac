@@ -1,0 +1,25 @@
+#turbo 40
+
+#include Spell_Routines.inc
+
+Sub Main
+
+/declare StunOne     outer "Color Cloud"
+/declare StunTwo     outer "Color Shift"
+/declare StunThree     outer "Color Slant"
+/declare StunFour     outer "Color Flux"
+
+:Main_Loop
+
+/doevents
+
+	/if (${Me.SpellReady[${StunOne}]}) /cast ${StunOne}
+	
+	/if (${Me.SpellReady[${StunTwo}]}) /cast ${StunTwo}
+	
+	/if (${Me.SpellReady[${StunThree}]}) /cast ${StunThree}
+
+ 	/if (${Me.SpellReady[${StunFour}]}) /cast ${StunFour}
+	
+/goto :Main_Loop
+/return 
