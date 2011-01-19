@@ -1,0 +1,15 @@
+#turbo 40
+
+#include Spell_Routines.inc 
+| ###################################################################
+Sub Main
+
+:Main_Loop
+
+	/call cast "Dusty Soriz Worker Pouch" item
+	
+	/autoinventory
+	
+	/goto :Main_Loop
+
+/return
