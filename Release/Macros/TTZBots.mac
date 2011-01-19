@@ -98,7 +98,7 @@ Sub Main
 	/if (${AmMelee}) /call CheckMeleeStatus
 	
 	:Hold_Main
-	/if (${Me.Moving}) /goto :Hold_Main
+	/if (${Me.Moving} || (${Me.Casting.ID} > 0 && ${Me.Class.Name.NotEqual[Bard]}) || ${Me.Invis}) /goto :Hold_Main
 	
 /goto :Main_Loop
 

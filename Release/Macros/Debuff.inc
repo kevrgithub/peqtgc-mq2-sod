@@ -88,168 +88,78 @@ sub BuildDebuffINI
 | # It must be targeted at the start of the call
 | ################################################
 sub DebuffCycle
-
+	/if (${Me.PctMana} < ${DebuffMana}) /return
+	
 	|- Knock it's resists down a bit
-	/call Resists
+	/if (${Target.Level} >= ${ResistsLevel}) /call CastDebuff "${SpellResists}"
 
 	|- Knock it's attack speed down
-	/call Slow
+	/if (${Target.Level} >= ${SlowLevel}) /call CastDebuff "${SpellSlow}"
 	
 	|- Knock it's attack power down
-	/call Cripple
+	/if (${Target.Level} >= ${CrippleLevel}) /call CastDebuff "${SpellCripple}"
 
 	/if (!${Defined[DebuffToAll]}) /declare DebuffToAll outer FALSE
 	
 	/varset DebuffToAll FALSE
-	/varset SlowImmune FALSE
 /return
 
-| #############################################################
-| # This handles the casting of the slow spell
-| # On a resist it will attempt to recast the number of times 
-| # specified within the INI file
-| #############################################################
-sub Slow
+| ##
+| #
+| ##
+Sub CastDebuff(string ToCast)
 	/declare CastCount int local 0
 	
-	|- Do we cast?
-	/if ((${Me.PctMana} > ${DebuffMana}) && (${Target.Level} >= ${SlowLevel})) {
-		|- Mana?
-		/if (${Me.CurrentMana} < ${Spell[${SpellSlow}].Mana}) {
-			/echo NO WAY
-		} else {
-		|- Come back here on resist or interupts
-		:Slow_Loop
-			|- To many!
-			/if (${CastCount} >= ${Tries}) {
-				/varset CastCount 0
-				/return
-			}
-			
-			|- Stunned?! OMFG
-			/if (${Me.Stunned}) {
-				/delay 3s
-				/goto :Slow_Loop
-			}
-			
-			|- Cast the spell
-			/call cast "${SpellSlow}"
-
-			|- What happened and what do we do now?
-			/if (${Macro.Return.Equal["CAST_INTERRUPTED"]}) {
-				/goto :Slow_Loop
-			} else /if (${Macro.Return.Equal["CAST_IMMUNE"]}) {
-				/echo *** ${Target.CleanName} is IMMUNE to my slow !         
-				/varset MobSlowed TRUE
-				/varset SlowImmune TRUE
-				/varset CastCount 0
-			} else /if (${Macro.Return.Equal["CAST_RESISTED"]}) {
-					/echo *** ${Target.CleanName} RESISTED slow ! Trying again asap
-					/varcalc CastCount ${CastCount}+1
-					/goto :Slow_Loop
-			} else /if (${Macro.Return.Equal["CAST_SUCCESS"]}) {
-				/echo *** ${Target.CleanName} is SLOWED
-				/varset MobSlowed TRUE
-				/varset CastCount 0
-				/call DebuffStatus "${SpellSlow}"
-			}
-			
-			|- We got here, it's either slowed or I gave up
-			/varset MobSlowed TRUE
-		}
-	}
-	
-/return
-
-| ###############################################################
-| # No resist checks as it is designed for an unresistable debuff 
-| # such as Tash/Malo
-| ###############################################################
-sub Resists
 	|- Mana?
-	/if ((${Me.PctMana} > ${DebuffMana}) && (${Target.Level} >= ${ResistsLevel})) {
-	:Resist_Loop
-		|- Cast it if we can
+	/if (${Me.CurrentMana} < ${Spell[${ToCast}].Mana}) {
+		/echo NO WAY
+	} else {
+	|- Come back here on resist or interupts
+	:Recast_Loop
+		|- Too many!
+		/if (${CastCount} >= ${Tries}) {
+			/varset CastCount 0
+			/return
+		}
+		
+		|- Stunned?! OMFG
 		/if (${Me.Stunned}) {
 			/delay 3s
-			/goto :Resist_Loop
-		} else /if (${Me.CurrentMana} < ${Spell[${SpellResists}].Mana}) {
-			/echo NO WAY IN HELL
-		} else {
-			/call cast "${SpellResists}"
-			/call DebuffStatus "${SpellResists}"
+			/goto :Recast_Loop
 		}
-	}	
-	
-/return
+		
+		|- Cast the spell
+		/call cast "${ToCast}" 3s
 
-| ############################################
-| # Cast's our weakening spell on the target
-| ############################################
-sub Cripple
-	/declare CastCount int local 0
-	
-	|- Can I cast?
-	/if ((${Me.PctMana} > ${DebuffMana}) && (${Target.Level} >= ${CrippleLevel})) {
-		/if (${Me.CurrentMana} < ${Spell[${SpellCripple}].Mana}) {
-			/echo NO WAY
-		} else {
-		:Cripple_Loop
-			|- Am I past max tries?
-			/if (${CastCount} >= ${Tries}) {
-				/varset CastCount 0
-				/return
-			}
-			
-			|- OMFG! Stunned!
-			/if (${Me.Stunned}) {
-				/delay 3s
-				/goto :Cripple_Loop
-			}
-			
-			|- Cast the spell
-			/call cast "${SpellCripple}" gem3 3s
-			
-			|- What happened and what do I do now?
-			/if (${Macro.Return.Equal["CAST_INTERRUPTED"]}) {
-				/goto :Cripple_Loop
-			} else /if (${Macro.Return.Equal["CAST_IMMUNE"]}) {
-				/echo *** ${Target.CleanName} is IMMUNE to my cripple !         
-				/varset MobCrippled TRUE
-				/varset CastCount 0
-			} else /if (${Macro.Return.Equal["CAST_RESISTED"]}) {
-				/echo *** ${Target.CleanName} RESISTED crippled ! Trying again asap
-				/varcalc CastCount ${CastCount}+1
-				/goto :Cripple_Loop
-			} else /if (${Macro.Return.Equal["CAST_SUCCESS"]}) {
-				/echo *** ${Target.CleanName} is CRIPPLED
-				/varset MobCrippled TRUE
-				/varset CastCount 0
-				/call DebuffStatus "${SpellCripple}"
-			}
-			
-			|- We got here, it's either slowed or I gave up
-			/varset MobCrippled TRUE
+		|- What happened and what do we do now?
+		/if (${Macro.Return.Equal["CAST_INTERRUPTED"]}) {
+			/goto :Recast_Loop
+		} else /if (${Macro.Return.Equal["CAST_IMMUNE"]}) {
+			/echo *** ${Target.CleanName} is IMMUNE to ${ToCast} !    
+			/call SpellStatus "*** ${Target.CleanName} is IMMUNE to ${ToCast} ***"
+			/varset CastCount 0
+		} else /if (${Macro.Return.Equal["CAST_RESISTED"]}) {
+			/echo *** ${Target.CleanName} RESISTED ${ToCast} ! Trying again asap
+			/varcalc CastCount ${CastCount}+1
+			/goto :Recast_Loop
+		} else /if (${Macro.Return.Equal["CAST_SUCCESS"]}) {
+			/echo *** ${Target.CleanName} has been struck by ${ToCast}
+			/varset CastCount 0
+			/call SpellStatus "${ToCast} has landed on ${Target.CleanName} !!"
 		}
 	}
 	
 /return
 
-| ####################################################
-| # Echos relevant information to bca or guildchat.
+| ##
 | #
-| # @PARAM - string DebuffSpell - The spell to be cast.
-| ####################################################
-Sub DebuffStatus(string DebuffSpell)
-	|- What level is it?
-	/if (${SlowImmune} && ${DebuffToAll} && ${DebuffSpell.Equal[${SpellSlow}]}) {
-		/guildsay ${Target.CleanName} is IMMUNE to ${DebuffSpell}
-	} else /if (${Target.Level} > 66 && ${DebuffToAll}) {
-		/guildsay ${DebuffSpell} has landed on ${Target.CleanName} 
+| ##
+Sub SpellStatus(string Message)
+	/if (${DebuffToAll}) {
+		/guildsay ${Message}
 	} else {
-		/bca ${DebuffSpell} has landed on ${Target.CleanName} 
+		/bca ${Message}
 	}
-	
 /return
 
 | ##############################################

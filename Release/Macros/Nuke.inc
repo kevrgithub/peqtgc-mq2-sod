@@ -82,11 +82,11 @@ Sub CheckNuke
 
 	/if (${Target.ID} != ${AttackTarget}) /call GetAttackTarget
 		
-	/if (${Target.PctHPs} < ${NukeAssistPct} && ${Attacking}) {	
-		/call DoINuke
-		/call UseVeeshanClicky		
+	/if (${Target.PctHPs} < ${NukeAssistPct} && ${Attacking}) {
+		/call DoINuke		
 	}
 
+	/if (${Target.PctHPs} < ${NukeAssistPct} && ${Attacking}) /call UseVeeshanClicky
 /return
 
 | ##
@@ -128,9 +128,7 @@ Sub Event_NonMeleeDamage(string Line, int Damage)
 | ##
 Sub DoINuke
 	|- Check to see if spell is mem'd and if not ready to cast, move to the next nuke
-	/if (!${Me.Gem[${CurrentNuke}]}) {
-	
-	}
+	/if ((!${Me.SpellReady[${CurrentNuke}]}) && ${Me.Gem[${CurrentNuke}]} > 0) /return
 	
 	/if ((${Target.Distance} < ${Spell[${CurrentNuke}].Range}) && (${Target.PctHPs} < ${NukeAssistPct}) && !${Me.Moving} && (${Me.PctMana} > ${MinNukeMana})) {
 		/call Cast "${CurrentNuke}" gem${NukeGem} 3s
@@ -155,14 +153,10 @@ Sub DecreaseAgro
 	/if (${FindItemCount[Maelin's Leggings of Lore]} > 0) {
 		/call cast "Maelin's Leggings of Lore" item
 	} else /if (${AgroSpell.NotEqual[LeaveThisForNoSpell]}) {
-			/call cast ${AgroSpell} gem${NukeGem} 3s
+		/say FAIL!
+		/call cast ${AgroSpell} gem${NukeGem} 3s
 	} else {
-		/declare i int local 0
-		/for i 0 to 5
-			/delay 1s
-			/call GetAttackTarget
-			/if (${Target.ID} != ${AttackTarget}) /return
-		/next i
+		/delay 3s
 	}
 	
 	/varset TotalDamage 0
@@ -173,11 +167,11 @@ Sub DecreaseAgro
 | ##
 Sub UseVeeshanClicky
 	/if (${Me.Class.Name.Equal[Wizard]} && ${FindItemCount[Aged Shissar Elementalist's Staff]} > 0) {
-		/call DoClickyNuke "Aged Shissar Elementalist's Staff" 2100
+		/call DoClickyWithTimer "Aged Shissar Elementalist's Staff" 2100
 	} else /if (${Me.Class.Name.Equal[Magician]} && ${FindItemCount[Aged Sarnak Channeler Staff]} > 0) {
-		/call DoClickyNuke "Aged Sarnak Channeler Staff" 1200
+		/call DoClickyWithTimer "Aged Sarnak Channeler Staff" 1200
 	} else /if (${Me.Class.Name.Equal[Necromancer]} && ${FindItemCount[Aged Shissar Deathspeaker Staff]} > 0) {
-		/call DoClickyNuke "Aged Shissar Deathspeaker Staff" 2100
+		/call DoClickyWithTimer "Aged Shissar Deathspeaker Staff" 2100
 	}
 /return
 
@@ -185,9 +179,9 @@ Sub UseVeeshanClicky
 | #
 | ##
 Sub DoClickyNuke(string ToClick, int RecastTime)
-	/if (!${Me.Moving} && ${Attacking} && ${UseNukes} && ${Target.Type.Equal[NPC]} && ${FindItemCount[${ToClick}]} > 0 && ${Me.PctMana} <= 95 && ${Target.Distance} <= ${FindItem[${ToClick}].Spell.Range} && (!${Defined[t${FindItem[${ToClick}].Spell.ID}]} || ${t${FindItem[${ToClick}].Spell.ID}} == 0)) {
-		/call Cast ${ToClick} item
-		/delay 2s
+	/if (!${Me.Moving} && ${FindItemCount[${ToClick}]} > 0 && ${Target.Distance} <= ${FindItem[${ToClick}].Spell.Range} && (!${Defined[t${FindItem[${ToClick}].Spell.ID}]} || ${t${FindItem[${ToClick}].Spell.ID}} == 0)) {
+		/call Cast "${ToClick}" item
+	
 		/if ( !${Defined[t${FindItem[${ToClick}].Spell.ID}]} ) {
 			/declare t${FindItem[${ToClick}].Spell.ID}    timer    outer
 		}
