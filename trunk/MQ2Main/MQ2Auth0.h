@@ -30,4 +30,7 @@ MQ2AUTH(fYoAnxLfdIoECzBqASMQQplKwVw);
 MQ2AUTH(ujiBbwIHIqccaniLwylhZseyKVS);
 MQ2AUTH(FrHegHgomIgQphCFizePeKBMzYa);
 MQ2AUTH(qfRDcmbLsasbRWVuHfJDlcslJYJ);
- 
+MQ2AUTH(eSuxNlOGjVagBGLAfOUxGnyPMbm);
+MQ2AUTH(OlkiJADNKSkAhmsVhKpdfkrDObR);
+MQ2AUTH(nIBVlCsMCZXFvFTVbMTkrEozPQz);
+MQ2AUTH(XoLWprFnwGgdjZlpDscgkHxJNQp);
