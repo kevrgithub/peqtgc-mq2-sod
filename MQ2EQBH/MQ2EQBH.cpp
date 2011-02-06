@@ -757,15 +757,22 @@ VOID BoxHChatCommand(PSPAWNINFO pChar, PCHAR szLine)
 	//10/14/10
 	else if (stricmp(szCommandStartRotation, szArg) == 0) {
 		HandleStartRotation();
+		WriteChatColor("Starting rotation.");
 	} else if (stricmp(szCommandStopRotation, szArg) == 0) {
 		HandleStopRotation();
+		WriteChatColor("Stopping rotation.");
 	} else if (stricmp(szCommandSetDelay, szArg) == 0) {
 		GetArg(szArg, szLine, 2);
-		WriteChatColor(szArg);
+		char szTemp[MAX_STRING] = {0};
+		sprintf(szTemp, "New delay is:%s", szArg);
+		WriteChatColor(szTemp);
 		std::string delay = szArg;
 		HandleSetDelay(delay);
 	} else if (stricmp(szCommandSetTank, szArg) == 0) {
 		GetArg(szArg, szLine, 2);
+		char szTemp[MAX_STRING] = {0};
+		sprintf(szTemp, "New tank is:%s", szArg);
+		WriteChatColor(szTemp);
 		std::string tank = szArg;
 		HandleSetTank(tank);
 	}
