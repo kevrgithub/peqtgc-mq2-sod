@@ -3295,6 +3295,20 @@ bool MQ2CharacterType::GETMEMBER()
 		}
 		Dest.Type=pIntType;
 		return true;
+	/*Reno*/
+   case Silenced:
+	   for(int i = 0; i < 25; ++i) {
+		   if (PSPELL spell = GetSpellByID(GetCharInfo2()->Buff[i].SpellID)) {
+			   for(int k = 0; k < 12; ++k) {
+				   if (spell->Attrib[k] == 96) {
+						Dest.Type = pBoolType;
+						Dest.DWord = true;
+				   }
+			   }
+		   }
+	   }
+	   return false;
+
 	}
 	return false;
 #undef pChar
