@@ -1032,7 +1032,7 @@ static inline BOOL IsInvisible() {
 }
 
 static inline BOOL IsGrouped() {
-  return (GetCharInfo() && GetCharInfo()->GroupLeader[0]);
+  return (GetCharInfo() && GetCharInfo()->pGroupInfo->pLeader);
 }
 
 static inline BOOL IsFeigning() {
@@ -1040,7 +1040,7 @@ static inline BOOL IsFeigning() {
 }
 
 static inline BOOL IsCasting() {
-  return (SpawnMe() && ((SpawnMe()->CastingAnimation)&0xFF)!=0xFF);
+  return (SpawnMe() && ((long)GetCharInfo()->pSpawn->CastingData.SpellID > 0));
 }
 
 static inline BOOL InRange(PSPAWNINFO a, PSPAWNINFO b, float d) {
@@ -1097,7 +1097,7 @@ LONG Aggroed(DWORD id) {
   if(PSPAWNINFO self=SpawnMe())
     if(PSPAWNINFO kill=GetSpawnID(id))
       if(PSPAWNINFO targ=(pTarget)?(PSPAWNINFO)pTarget:NULL) {
-        if(targ==kill && self==self->pTargetOfTarget)  return  1; // im on hott
+		if(targ==kill && self->SpawnID==self->TargetOfTarget)  return  1; // im on hott
         if(fabs(AngularHeading(kill,self))<8.0f)       return  1; // it's facing me
         if(FindSpeed(kill)>0.0f && kill->HPCurrent<20) return -1; // it's moving
         if(InRange(self,targ,25.0f))                   return -1; // close enough
@@ -3030,7 +3030,7 @@ void MeleeHandle() {
           long type=Aggroed(MeleeTarg);
           bool swim=(SpawnMe()->UnderWater==5);
           bool stab=(type<1 && doBACKSTAB && doSTAB<192);
-          bool tank=(type>0 || (!IsInvisible() && (doAGGRO || !GetCharInfo()->GroupLeader[0])));
+          bool tank=(type>0 || (!IsInvisible() && (doAGGRO || !GetCharInfo()->pGroupInfo->pLeader)));
           double dist=MeleeKill-3.0f-(MeleeFlee*3.0f);
           sprintf(Reserved,"%2.2f id %d%s%s",dist,MeleeTarg,MeleeFlee?"":tank?" moveback":!stab?" !front":" behind",swim?" uw":"");
         }

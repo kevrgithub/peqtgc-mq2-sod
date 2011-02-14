@@ -186,6 +186,8 @@ Sub DoBuff(string command, string requestor, string channel)
 	/declare BuffSpell string local ${HashMap[${BuffSpells}].Find[${command.Lower}]}
 	/declare AASpell bool local FALSE
 	
+	/if (${Int[${command}]} > 0) /return
+	
 	|- Not in our alias's, try the full spell name if allowed
 	/if (${BuffSpell.Equal[NULL]} && ${Me.Book[${command}]} && ${BuffBySpellName}) /varset BuffSpell ${command}
 	
@@ -194,7 +196,6 @@ Sub DoBuff(string command, string requestor, string channel)
 	|- Turn off melody
 	/if (${Me.Class.Name.Equal[Bard]} && ${Me.Casting.ID} != 0) /melody
 	
-	| /gsay ${command} [] ${AASpell}
 	|- Maybe it is an AA ability?
 	/if (${Me.AltAbility[${command}]} > 0) {
 		/varset AASpell TRUE
@@ -202,7 +203,6 @@ Sub DoBuff(string command, string requestor, string channel)
 	}
 	
 	/if (${Me.Gem[${BuffSpell}]} > 0 && !${Me.SpellReady[${BuffSpell}]}) {
-		| /gsay I RETURNED!
 		/return
 	}
 	
@@ -262,10 +262,8 @@ Sub DoBuff(string command, string requestor, string channel)
 			| /gsay In ALT
 			/if (${Me.AltAbilityReady[${BuffSpell}]}) /call cast "${BuffSpell}" alt
 		} else {
-			| /gsay CASTING ${BuffSPell} in gem${GemNo}
 			/declare WaitTime int local ${Spell[${BuffSpell}].RecastTime}
-			/if (${WaitTime} > 3) /varset WaitTime 3
-			| check for wait times under 2s....
+			/if (${WaitTime} > 4) /varset WaitTime 4
 			/call cast "${BuffSpell}" gem${GemNo} ${WaitTime}s
 		}
 	}

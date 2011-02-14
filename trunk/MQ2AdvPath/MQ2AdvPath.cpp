@@ -1,10443 +1,1367 @@
+//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=//
+// Projet: MQ2AdvPath.cpp
+// Author: A_Enchanter_00
+//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=//
+//
+#include "../MQ2Plugin.h"
+
+#include <vector>
+#include <list>
+#include <direct.h>
+
+PreSetup("MQ2AdvPath");
+PLUGIN_VERSION(8.1010);
+
+#define       FOLLOW_OFF                                0
+#define       FOLLOW_FOLLOWING                  1
+#define       FOLLOW_PLAYING                    2
+#define       FOLLOW_RECORDING                  3
+
+#define       STATUS_OFF                                0
+#define       STATUS_ON                                 1
+#define       STATUS_PAUSED                             2
+
+#define       DISTANCE_BETWEN_LOG               5
+#define       DISTANCE_OPEN_DOOR_CLOSE  20
+#define       ANGEL_OPEN_DOOR_CLOSE             50.0
+#define       DISTANCE_OPEN_DOOR_LONG   50
+#define       ANGEL_OPEN_DOOR_LONG              95.0
+
+// Timer Structure
+struct Position {
+        FLOAT X;
+        FLOAT Y;
+        FLOAT Z;
+        FLOAT Heading;
+        char CheckPoint[MAX_STRING];
+        bool Warping;
+} pPosition;
+
+long FollowState = FOLLOW_OFF;          // Active?
+long StatusState = STATUS_OFF;          // Active?
+
+long FollowSpawnDistance = 20;          // Active?
+
+long FollowIdle = 0;                            // FollowIdle time when Follow on?
+long NextClickDoor = 0;                         // NextClickDoor when Follow on?
+long PauseDoor = 0;                                     // PauseDoor paused Follow on and near door?
+bool AutoOpenDoor = true;
+
+bool DoOpenDoor = false;
+
+// INI VARS
+long AutoStopFollow = 0;
+long AutoStopPath = 0;
+bool UseStuckLogic = true;
+
+bool PlayReverse = false;                       // Play Reversed ?
+bool PlayLoop = false;                          // Play Loop? a->b a->b a->b a->b ....
+//bool PlayReturn = false;                      // Play Return? a->b b->a
+long PlayWaypoint = 0;
+
+long MonitorID = 0;                                     // Spawn To Monitor and follow
+char MonitorName[MAX_STRING] = {NULL};                          // Spawn To Monitor Name used when following across zones
+long MonitorZoneID = 0;                         // Monitor Zone ID
+FLOAT MonitorX = 0;                                     // Spawn To MonitorX
+FLOAT MonitorY = 0;                                     // Spawn To MonitorY
+FLOAT MonitorZ = 0;                                     // Spawn To MonitorZ
+FLOAT MonitorHeading = 0;                       // Spawn To MonitorHeading
+bool MonitorWarp = false;                       // Spawn To Monitor has warped
+
+FLOAT MeMonitorX = 0;                                   // MeMonitorX monitor your self
+FLOAT MeMonitorY = 0;                                   // MeMonitorY monitor your self
+FLOAT MeMonitorZ = 0;                                   // MeMonitorZ monitor your self
+
+CHAR Buffer[MAX_STRING] = {0};                                  // Buffer for String manipulatsion
+
+PCHAR TloIndex = {0};                                                   // TloIndex for String manipulatsion
+
+CHAR SavePathName[MAX_STRING] = {NULL};                 // Buffer for Save Path Name
+CHAR SavePathZone[MAX_STRING] = {NULL};                 // Buffer for Save Zone Name
+
+CHAR PathNameZone[MAX_STRING] = {NULL};                 // Play path across zone lines
+CHAR SpawnNameZone[MAX_STRING] = {NULL};                // Follow Spawn Across zonelines
+
+bool MoveBindsLoaded = false;
+
+list<Position>  FollowPath;                     // FollowPath
+
+HMODULE EQWhMod=0; 
+typedef HWND   (__stdcall *fEQW_GetDisplayWindow)(VOID); 
+fEQW_GetDisplayWindow EQW_GetDisplayWindow=0; 
+
+class MQ2AdvPathType *pAdvPathType=0;
 
 
+VOID MQFollowCommand(PSPAWNINFO pChar, PCHAR szLine);
+void ReleaseKeys();
+void DoWalk(bool walk = false);
+void DoFwd(bool hold, bool walk = false);
+void DoBck(bool hold);
+void DoLft(bool hold);
+void DoRgt(bool hold);
+void DoStop();
+void LookAt(FLOAT X,FLOAT Y,FLOAT Z);
+VOID ClearAll();
+VOID ClearOne(list<Position>::iterator &CurList);
+VOID AddWaypoint(long SpawnID,bool Warping=false);
+PDOOR ClosestDoor();
+bool IsOpenDoor( PDOOR pDoor );
+VOID OpenDoor();
+bool InFront( float X,float Y, float Angel, bool Reverse=false );
+VOID SavePath( PCHAR PathName ,PCHAR PathZone, bool SaveAll=false );
+bool LoadPath( PCHAR PathName );
+VOID FollowSpawn();
+VOID FollowWaypointsInit(float smart);
+VOID FollowWaypoints();
+VOID ClearLag();
+VOID RecordingWaypoints();
+void __stdcall WarpingDetect(unsigned int ID, void *pData, PBLECHVALUE pValues);
+void CreateBinds();
+void DestroyBinds();
+void MQCheckFollowCommand(PCHAR Name, BOOL Down);
+VOID ReadINI();
 
+void StuckCheck(bool reset=false);
 
-<!DOCTYPE html>
-<html>
-<head>
- <link rel="icon" type="image/vnd.microsoft.icon" href="http://www.gstatic.com/codesite/ph/images/phosting.ico">
- 
- <script type="text/javascript">
- 
- 
- 
- var codesite_token = "c8929d14f258b146753cc4bc49e596bb";
- 
- 
- var logged_in_user_email = "thansen1040@gmail.com";
- 
- 
- var relative_base_url = "";
- 
- </script>
- 
- 
- <title>MQ2AdvPath.cpp - 
- aenchanter00 -
- 
- Project Hosting on Google Code</title>
- <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" >
- <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" >
- 
- <meta name="ROBOTS" content="NOARCHIVE">
- 
- <link type="text/css" rel="stylesheet" href="http://www.gstatic.com/codesite/ph/3463025281934143195/css/ph_core.css">
- 
- <link type="text/css" rel="stylesheet" href="http://www.gstatic.com/codesite/ph/3463025281934143195/css/ph_detail.css" >
- 
- 
- <link type="text/css" rel="stylesheet" href="http://www.gstatic.com/codesite/ph/3463025281934143195/css/d_sb_20080522.css" >
- 
- 
- 
-<!--[if IE]>
- <link type="text/css" rel="stylesheet" href="http://www.gstatic.com/codesite/ph/3463025281934143195/css/d_ie.css" >
-<![endif]-->
- <style type="text/css">
- .menuIcon.off { background: no-repeat url(http://www.gstatic.com/codesite/ph/images/dropdown_sprite.gif) 0 -42px }
- .menuIcon.on { background: no-repeat url(http://www.gstatic.com/codesite/ph/images/dropdown_sprite.gif) 0 -28px }
- .menuIcon.down { background: no-repeat url(http://www.gstatic.com/codesite/ph/images/dropdown_sprite.gif) 0 0; }
- 
- 
- 
-  tr.inline_comment {
- background: #fff;
- vertical-align: top;
- }
- div.draft, div.published {
- padding: .3em;
- border: 1px solid #999; 
- margin-bottom: .1em;
- font-family: arial, sans-serif;
- max-width: 60em;
- }
- div.draft {
- background: #ffa;
- } 
- div.published {
- background: #e5ecf9;
- }
- div.published .body, div.draft .body {
- padding: .5em .1em .1em .1em;
- max-width: 60em;
- white-space: pre-wrap;
- white-space: -moz-pre-wrap;
- white-space: -pre-wrap;
- white-space: -o-pre-wrap;
- word-wrap: break-word;
- font-size: 1em;
- }
- div.draft .actions {
- margin-left: 1em;
- font-size: 90%;
- }
- div.draft form {
- padding: .5em .5em .5em 0;
- }
- div.draft textarea, div.published textarea {
- width: 95%;
- height: 10em;
- font-family: arial, sans-serif;
- margin-bottom: .5em;
- }
+vector<PMAPLINE>  pFollowPath;
 
- 
- .nocursor, .nocursor td, .cursor_hidden, .cursor_hidden td {
- background-color: white;
- height: 2px;
- }
- .cursor, .cursor td {
- background-color: darkblue;
- height: 2px;
- display: '';
- }
- 
- 
- .edit_icon {
- width: 14px;
- height: 14px;
- padding-right: 4px;
- }
- 
-.list {
- border: 1px solid white;
- margin-bottom:0;
+unsigned long thisClock = clock();
+unsigned long lastClock = clock();
+long DistanceMod = 0;
+
+inline PMAPLINE InitLine() {
+  typedef PMAPLINE (__cdecl *InitLineCALL) ();
+  PMQPLUGIN pLook=pPlugins;
+  while(pLook && stricmp(pLook->szFilename,"MQ2Map")) pLook=pLook->pNext;
+  if(pLook)
+          if(InitLineCALL Request=(InitLineCALL)GetProcAddress(pLook->hModule,"MQ2MapAddLine"))
+                  return Request();
+  return 0;
 }
 
- </style>
-</head>
-<body class="t4">
- <script type="text/javascript">
- var _gaq = _gaq || [];
- _gaq.push(
- ['siteTracker._setAccount', 'UA-18071-1'],
- ['siteTracker._trackPageview']);
- 
- (function() {
- var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
- ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
- (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ga);
- })();
- </script>
-<div class="headbg">
- <div id="gaia">
- 
- <span>
- 
- 
- <b>thansen1040@gmail.com</b>
- 
- 
- | <a href="/u/@WBVSRlVRABlNXQJ1/" id="projects-dropdown" onclick="return false;"
- ><u>My favorites</u> <small>&#9660;</small></a>
- | <a href="/u/@WBVSRlVRABlNXQJ1/" onclick="_CS_click('/gb/ph/profile');" 
- title="Profile, Updates, and Settings"
- ><u>Profile</u></a>
- | <a href="https://www.google.com/accounts/Logout?continue=http%3A%2F%2Fcode.google.com%2Fp%2Faenchanter00%2Fsource%2Fbrowse%2Ftrunk%2FMQ2AdvPath%2FMQ2AdvPath.cpp" 
- onclick="_CS_click('/gb/ph/signout');"
- ><u>Sign out</u></a>
- 
- </span>
-
- </div>
- <div class="gbh" style="left: 0pt;"></div>
- <div class="gbh" style="right: 0pt;"></div>
- 
- 
- <div style="height: 1px"></div>
-<!--[if lte IE 7]>
-<div style="text-align:center;">
-Your version of Internet Explorer is not supported. Try a browser that
-contributes to open source, such as <a href="http://www.firefox.com">Firefox</a>,
-<a href="http://www.google.com/chrome">Google Chrome</a>, or
-<a href="http://code.google.com/chrome/chromeframe/">Google Chrome Frame</a>.
-</div>
-<![endif]-->
-
-
-
-
- <table style="padding:0px; margin: 0px 0px 10px 0px; width:100%" cellpadding="0" cellspacing="0">
- <tr style="height: 58px;">
- 
- <td id="plogo">
- <a href="/p/aenchanter00/">
- 
- <img src="http://www.gstatic.com/codesite/ph/images/defaultlogo.png" alt="Logo">
- 
- </a>
- </td>
- 
- <td style="padding-left: 0.5em">
- 
- <div id="pname">
- <a href="/p/aenchanter00/">aenchanter00</a>
- </div>
- <div id="psum">
- <a id="project_summary_link" href="/p/aenchanter00/" >Source code for mq2 plugins</a>
- 
- </div>
- 
- </td>
- <td style="white-space:nowrap;text-align:right; vertical-align:bottom;">
- 
- <form action="/hosting/search">
- <input size="30" name="q" value="" type="text">
- <input type="submit" name="projectsearch" value="Search projects" >
- </form>
- 
- </tr>
- </table>
-
-</div>
-
- 
-<div id="mt" class="gtb"> 
- <a href="/p/aenchanter00/" class="tab ">Project&nbsp;Home</a> 
- 
- 
- 
- 
- <a href="/p/aenchanter00/downloads/list" class="tab ">Downloads</a>
- 
- 
- 
- 
- 
- <a href="/p/aenchanter00/w/list" class="tab ">Wiki</a>
- 
- 
- 
- 
- 
- <a href="/p/aenchanter00/issues/list"
- class="tab ">Issues</a>
- 
- 
- 
- 
- 
- <a href="/p/aenchanter00/source/checkout"
- class="tab active">Source</a>
- 
- 
- 
- <div class=gtbc></div>
-</div>
-<table cellspacing="0" cellpadding="0" width="100%" align="center" border="0" class="st">
- <tr>
- 
- 
- 
- 
- 
- 
- <td class="subt">
- <div class="st2">
- <div class="isf">
- 
- 
- 
- <span class="inst1"><a href="/p/aenchanter00/source/checkout">Checkout</a></span> &nbsp;
- <span class="inst2"><a href="/p/aenchanter00/source/browse/">Browse</a></span> &nbsp;
- <span class="inst3"><a href="/p/aenchanter00/source/list">Changes</a></span> &nbsp;
- 
- <form action="http://www.google.com/codesearch" method="get" style="display:inline"
- onsubmit="document.getElementById('codesearchq').value = document.getElementById('origq').value + ' package:http://aenchanter00\\.googlecode\\.com'">
- <input type="hidden" name="q" id="codesearchq" value="">
- <input type="text" maxlength="2048" size="38" id="origq" name="origq" value="" title="Google Code Search" style="font-size:92%">&nbsp;<input type="submit" value="Search Trunk" name="btnG" style="font-size:92%">
- 
- 
- 
- </form>
- </div>
-</div>
-
- </td>
- 
- 
- 
- <td align="right" valign="top" class="bevel-right"></td>
- </tr>
-</table>
-<script type="text/javascript">
- var cancelBubble = false;
- function _go(url) { document.location = url; }
-</script>
-
-
-<div id="maincol"
- 
->
-
- 
-<!-- IE -->
-
-
-
-
-<div class="expand">
-<div id="colcontrol">
-<style type="text/css">
- #file_flipper { white-space: nowrap; padding-right: 2em; }
- #file_flipper.hidden { display: none; }
- #file_flipper .pagelink { color: #0000CC; text-decoration: underline; }
- #file_flipper #visiblefiles { padding-left: 0.5em; padding-right: 0.5em; }
-</style>
-<table id="nav_and_rev" class="list"
- cellpadding="0" cellspacing="0" width="100%">
- <tr>
- 
- <td nowrap="nowrap" class="src_crumbs src_nav" width="33%">
- <strong class="src_nav">Source path:&nbsp;</strong>
- <span id="crumb_root">
- 
- <a href="/p/aenchanter00/source/browse/">svn</a>/&nbsp;</span>
- <span id="crumb_links" class="ifClosed"><a href="/p/aenchanter00/source/browse/trunk/">trunk</a><span class="sp">/&nbsp;</span><a href="/p/aenchanter00/source/browse/trunk/MQ2AdvPath/">MQ2AdvPath</a><span class="sp">/&nbsp;</span>MQ2AdvPath.cpp</span>
- 
- 
-
- </td>
- 
- 
- <td nowrap="nowrap" width="33%" align="center">
- <a href="/p/aenchanter00/source/browse/trunk/MQ2AdvPath/MQ2AdvPath.cpp?edit=1"
- ><img src="http://www.gstatic.com/codesite/ph/images/pencil-y14.png"
- class="edit_icon">Edit file</a>
- </td>
- 
- 
- <td nowrap="nowrap" width="33%" align="right">
- <table cellpadding="0" cellspacing="0" style="font-size: 100%"><tr>
- 
- 
- <td class="flipper"><b>r4</b></td>
- 
- </tr></table>
- </td> 
- </tr>
-</table>
-
-<div class="fc">
- 
- 
- 
-<style type="text/css">
-.undermouse span {
- background-image: url(http://www.gstatic.com/codesite/ph/images/comments.gif); }
-</style>
-<table class="opened" id="review_comment_area"
-><tr>
-<td id="nums">
-<pre><table width="100%"><tr class="nocursor"><td></td></tr></table></pre>
-<pre><table width="100%" id="nums_table_0"><tr id="gr_svn4_1"
-
-><td id="1"><a href="#1">1</a></td></tr
-><tr id="gr_svn4_2"
-
-><td id="2"><a href="#2">2</a></td></tr
-><tr id="gr_svn4_3"
-
-><td id="3"><a href="#3">3</a></td></tr
-><tr id="gr_svn4_4"
-
-><td id="4"><a href="#4">4</a></td></tr
-><tr id="gr_svn4_5"
-
-><td id="5"><a href="#5">5</a></td></tr
-><tr id="gr_svn4_6"
-
-><td id="6"><a href="#6">6</a></td></tr
-><tr id="gr_svn4_7"
-
-><td id="7"><a href="#7">7</a></td></tr
-><tr id="gr_svn4_8"
-
-><td id="8"><a href="#8">8</a></td></tr
-><tr id="gr_svn4_9"
-
-><td id="9"><a href="#9">9</a></td></tr
-><tr id="gr_svn4_10"
-
-><td id="10"><a href="#10">10</a></td></tr
-><tr id="gr_svn4_11"
-
-><td id="11"><a href="#11">11</a></td></tr
-><tr id="gr_svn4_12"
-
-><td id="12"><a href="#12">12</a></td></tr
-><tr id="gr_svn4_13"
-
-><td id="13"><a href="#13">13</a></td></tr
-><tr id="gr_svn4_14"
-
-><td id="14"><a href="#14">14</a></td></tr
-><tr id="gr_svn4_15"
-
-><td id="15"><a href="#15">15</a></td></tr
-><tr id="gr_svn4_16"
-
-><td id="16"><a href="#16">16</a></td></tr
-><tr id="gr_svn4_17"
-
-><td id="17"><a href="#17">17</a></td></tr
-><tr id="gr_svn4_18"
-
-><td id="18"><a href="#18">18</a></td></tr
-><tr id="gr_svn4_19"
-
-><td id="19"><a href="#19">19</a></td></tr
-><tr id="gr_svn4_20"
-
-><td id="20"><a href="#20">20</a></td></tr
-><tr id="gr_svn4_21"
-
-><td id="21"><a href="#21">21</a></td></tr
-><tr id="gr_svn4_22"
-
-><td id="22"><a href="#22">22</a></td></tr
-><tr id="gr_svn4_23"
-
-><td id="23"><a href="#23">23</a></td></tr
-><tr id="gr_svn4_24"
-
-><td id="24"><a href="#24">24</a></td></tr
-><tr id="gr_svn4_25"
-
-><td id="25"><a href="#25">25</a></td></tr
-><tr id="gr_svn4_26"
-
-><td id="26"><a href="#26">26</a></td></tr
-><tr id="gr_svn4_27"
-
-><td id="27"><a href="#27">27</a></td></tr
-><tr id="gr_svn4_28"
-
-><td id="28"><a href="#28">28</a></td></tr
-><tr id="gr_svn4_29"
-
-><td id="29"><a href="#29">29</a></td></tr
-><tr id="gr_svn4_30"
-
-><td id="30"><a href="#30">30</a></td></tr
-><tr id="gr_svn4_31"
-
-><td id="31"><a href="#31">31</a></td></tr
-><tr id="gr_svn4_32"
-
-><td id="32"><a href="#32">32</a></td></tr
-><tr id="gr_svn4_33"
-
-><td id="33"><a href="#33">33</a></td></tr
-><tr id="gr_svn4_34"
-
-><td id="34"><a href="#34">34</a></td></tr
-><tr id="gr_svn4_35"
-
-><td id="35"><a href="#35">35</a></td></tr
-><tr id="gr_svn4_36"
-
-><td id="36"><a href="#36">36</a></td></tr
-><tr id="gr_svn4_37"
-
-><td id="37"><a href="#37">37</a></td></tr
-><tr id="gr_svn4_38"
-
-><td id="38"><a href="#38">38</a></td></tr
-><tr id="gr_svn4_39"
-
-><td id="39"><a href="#39">39</a></td></tr
-><tr id="gr_svn4_40"
-
-><td id="40"><a href="#40">40</a></td></tr
-><tr id="gr_svn4_41"
-
-><td id="41"><a href="#41">41</a></td></tr
-><tr id="gr_svn4_42"
-
-><td id="42"><a href="#42">42</a></td></tr
-><tr id="gr_svn4_43"
-
-><td id="43"><a href="#43">43</a></td></tr
-><tr id="gr_svn4_44"
-
-><td id="44"><a href="#44">44</a></td></tr
-><tr id="gr_svn4_45"
-
-><td id="45"><a href="#45">45</a></td></tr
-><tr id="gr_svn4_46"
-
-><td id="46"><a href="#46">46</a></td></tr
-><tr id="gr_svn4_47"
-
-><td id="47"><a href="#47">47</a></td></tr
-><tr id="gr_svn4_48"
-
-><td id="48"><a href="#48">48</a></td></tr
-><tr id="gr_svn4_49"
-
-><td id="49"><a href="#49">49</a></td></tr
-><tr id="gr_svn4_50"
-
-><td id="50"><a href="#50">50</a></td></tr
-><tr id="gr_svn4_51"
-
-><td id="51"><a href="#51">51</a></td></tr
-><tr id="gr_svn4_52"
-
-><td id="52"><a href="#52">52</a></td></tr
-><tr id="gr_svn4_53"
-
-><td id="53"><a href="#53">53</a></td></tr
-><tr id="gr_svn4_54"
-
-><td id="54"><a href="#54">54</a></td></tr
-><tr id="gr_svn4_55"
-
-><td id="55"><a href="#55">55</a></td></tr
-><tr id="gr_svn4_56"
-
-><td id="56"><a href="#56">56</a></td></tr
-><tr id="gr_svn4_57"
-
-><td id="57"><a href="#57">57</a></td></tr
-><tr id="gr_svn4_58"
-
-><td id="58"><a href="#58">58</a></td></tr
-><tr id="gr_svn4_59"
-
-><td id="59"><a href="#59">59</a></td></tr
-><tr id="gr_svn4_60"
-
-><td id="60"><a href="#60">60</a></td></tr
-><tr id="gr_svn4_61"
-
-><td id="61"><a href="#61">61</a></td></tr
-><tr id="gr_svn4_62"
-
-><td id="62"><a href="#62">62</a></td></tr
-><tr id="gr_svn4_63"
-
-><td id="63"><a href="#63">63</a></td></tr
-><tr id="gr_svn4_64"
-
-><td id="64"><a href="#64">64</a></td></tr
-><tr id="gr_svn4_65"
-
-><td id="65"><a href="#65">65</a></td></tr
-><tr id="gr_svn4_66"
-
-><td id="66"><a href="#66">66</a></td></tr
-><tr id="gr_svn4_67"
-
-><td id="67"><a href="#67">67</a></td></tr
-><tr id="gr_svn4_68"
-
-><td id="68"><a href="#68">68</a></td></tr
-><tr id="gr_svn4_69"
-
-><td id="69"><a href="#69">69</a></td></tr
-><tr id="gr_svn4_70"
-
-><td id="70"><a href="#70">70</a></td></tr
-><tr id="gr_svn4_71"
-
-><td id="71"><a href="#71">71</a></td></tr
-><tr id="gr_svn4_72"
-
-><td id="72"><a href="#72">72</a></td></tr
-><tr id="gr_svn4_73"
-
-><td id="73"><a href="#73">73</a></td></tr
-><tr id="gr_svn4_74"
-
-><td id="74"><a href="#74">74</a></td></tr
-><tr id="gr_svn4_75"
-
-><td id="75"><a href="#75">75</a></td></tr
-><tr id="gr_svn4_76"
-
-><td id="76"><a href="#76">76</a></td></tr
-><tr id="gr_svn4_77"
-
-><td id="77"><a href="#77">77</a></td></tr
-><tr id="gr_svn4_78"
-
-><td id="78"><a href="#78">78</a></td></tr
-><tr id="gr_svn4_79"
-
-><td id="79"><a href="#79">79</a></td></tr
-><tr id="gr_svn4_80"
-
-><td id="80"><a href="#80">80</a></td></tr
-><tr id="gr_svn4_81"
-
-><td id="81"><a href="#81">81</a></td></tr
-><tr id="gr_svn4_82"
-
-><td id="82"><a href="#82">82</a></td></tr
-><tr id="gr_svn4_83"
-
-><td id="83"><a href="#83">83</a></td></tr
-><tr id="gr_svn4_84"
-
-><td id="84"><a href="#84">84</a></td></tr
-><tr id="gr_svn4_85"
-
-><td id="85"><a href="#85">85</a></td></tr
-><tr id="gr_svn4_86"
-
-><td id="86"><a href="#86">86</a></td></tr
-><tr id="gr_svn4_87"
-
-><td id="87"><a href="#87">87</a></td></tr
-><tr id="gr_svn4_88"
-
-><td id="88"><a href="#88">88</a></td></tr
-><tr id="gr_svn4_89"
-
-><td id="89"><a href="#89">89</a></td></tr
-><tr id="gr_svn4_90"
-
-><td id="90"><a href="#90">90</a></td></tr
-><tr id="gr_svn4_91"
-
-><td id="91"><a href="#91">91</a></td></tr
-><tr id="gr_svn4_92"
-
-><td id="92"><a href="#92">92</a></td></tr
-><tr id="gr_svn4_93"
-
-><td id="93"><a href="#93">93</a></td></tr
-><tr id="gr_svn4_94"
-
-><td id="94"><a href="#94">94</a></td></tr
-><tr id="gr_svn4_95"
-
-><td id="95"><a href="#95">95</a></td></tr
-><tr id="gr_svn4_96"
-
-><td id="96"><a href="#96">96</a></td></tr
-><tr id="gr_svn4_97"
-
-><td id="97"><a href="#97">97</a></td></tr
-><tr id="gr_svn4_98"
-
-><td id="98"><a href="#98">98</a></td></tr
-><tr id="gr_svn4_99"
-
-><td id="99"><a href="#99">99</a></td></tr
-><tr id="gr_svn4_100"
-
-><td id="100"><a href="#100">100</a></td></tr
-><tr id="gr_svn4_101"
-
-><td id="101"><a href="#101">101</a></td></tr
-><tr id="gr_svn4_102"
-
-><td id="102"><a href="#102">102</a></td></tr
-><tr id="gr_svn4_103"
-
-><td id="103"><a href="#103">103</a></td></tr
-><tr id="gr_svn4_104"
-
-><td id="104"><a href="#104">104</a></td></tr
-><tr id="gr_svn4_105"
-
-><td id="105"><a href="#105">105</a></td></tr
-><tr id="gr_svn4_106"
-
-><td id="106"><a href="#106">106</a></td></tr
-><tr id="gr_svn4_107"
-
-><td id="107"><a href="#107">107</a></td></tr
-><tr id="gr_svn4_108"
-
-><td id="108"><a href="#108">108</a></td></tr
-><tr id="gr_svn4_109"
-
-><td id="109"><a href="#109">109</a></td></tr
-><tr id="gr_svn4_110"
-
-><td id="110"><a href="#110">110</a></td></tr
-><tr id="gr_svn4_111"
-
-><td id="111"><a href="#111">111</a></td></tr
-><tr id="gr_svn4_112"
-
-><td id="112"><a href="#112">112</a></td></tr
-><tr id="gr_svn4_113"
-
-><td id="113"><a href="#113">113</a></td></tr
-><tr id="gr_svn4_114"
-
-><td id="114"><a href="#114">114</a></td></tr
-><tr id="gr_svn4_115"
-
-><td id="115"><a href="#115">115</a></td></tr
-><tr id="gr_svn4_116"
-
-><td id="116"><a href="#116">116</a></td></tr
-><tr id="gr_svn4_117"
-
-><td id="117"><a href="#117">117</a></td></tr
-><tr id="gr_svn4_118"
-
-><td id="118"><a href="#118">118</a></td></tr
-><tr id="gr_svn4_119"
-
-><td id="119"><a href="#119">119</a></td></tr
-><tr id="gr_svn4_120"
-
-><td id="120"><a href="#120">120</a></td></tr
-><tr id="gr_svn4_121"
-
-><td id="121"><a href="#121">121</a></td></tr
-><tr id="gr_svn4_122"
-
-><td id="122"><a href="#122">122</a></td></tr
-><tr id="gr_svn4_123"
-
-><td id="123"><a href="#123">123</a></td></tr
-><tr id="gr_svn4_124"
-
-><td id="124"><a href="#124">124</a></td></tr
-><tr id="gr_svn4_125"
-
-><td id="125"><a href="#125">125</a></td></tr
-><tr id="gr_svn4_126"
-
-><td id="126"><a href="#126">126</a></td></tr
-><tr id="gr_svn4_127"
-
-><td id="127"><a href="#127">127</a></td></tr
-><tr id="gr_svn4_128"
-
-><td id="128"><a href="#128">128</a></td></tr
-><tr id="gr_svn4_129"
-
-><td id="129"><a href="#129">129</a></td></tr
-><tr id="gr_svn4_130"
-
-><td id="130"><a href="#130">130</a></td></tr
-><tr id="gr_svn4_131"
-
-><td id="131"><a href="#131">131</a></td></tr
-><tr id="gr_svn4_132"
-
-><td id="132"><a href="#132">132</a></td></tr
-><tr id="gr_svn4_133"
-
-><td id="133"><a href="#133">133</a></td></tr
-><tr id="gr_svn4_134"
-
-><td id="134"><a href="#134">134</a></td></tr
-><tr id="gr_svn4_135"
-
-><td id="135"><a href="#135">135</a></td></tr
-><tr id="gr_svn4_136"
-
-><td id="136"><a href="#136">136</a></td></tr
-><tr id="gr_svn4_137"
-
-><td id="137"><a href="#137">137</a></td></tr
-><tr id="gr_svn4_138"
-
-><td id="138"><a href="#138">138</a></td></tr
-><tr id="gr_svn4_139"
-
-><td id="139"><a href="#139">139</a></td></tr
-><tr id="gr_svn4_140"
-
-><td id="140"><a href="#140">140</a></td></tr
-><tr id="gr_svn4_141"
-
-><td id="141"><a href="#141">141</a></td></tr
-><tr id="gr_svn4_142"
-
-><td id="142"><a href="#142">142</a></td></tr
-><tr id="gr_svn4_143"
-
-><td id="143"><a href="#143">143</a></td></tr
-><tr id="gr_svn4_144"
-
-><td id="144"><a href="#144">144</a></td></tr
-><tr id="gr_svn4_145"
-
-><td id="145"><a href="#145">145</a></td></tr
-><tr id="gr_svn4_146"
-
-><td id="146"><a href="#146">146</a></td></tr
-><tr id="gr_svn4_147"
-
-><td id="147"><a href="#147">147</a></td></tr
-><tr id="gr_svn4_148"
-
-><td id="148"><a href="#148">148</a></td></tr
-><tr id="gr_svn4_149"
-
-><td id="149"><a href="#149">149</a></td></tr
-><tr id="gr_svn4_150"
-
-><td id="150"><a href="#150">150</a></td></tr
-><tr id="gr_svn4_151"
-
-><td id="151"><a href="#151">151</a></td></tr
-><tr id="gr_svn4_152"
-
-><td id="152"><a href="#152">152</a></td></tr
-><tr id="gr_svn4_153"
-
-><td id="153"><a href="#153">153</a></td></tr
-><tr id="gr_svn4_154"
-
-><td id="154"><a href="#154">154</a></td></tr
-><tr id="gr_svn4_155"
-
-><td id="155"><a href="#155">155</a></td></tr
-><tr id="gr_svn4_156"
-
-><td id="156"><a href="#156">156</a></td></tr
-><tr id="gr_svn4_157"
-
-><td id="157"><a href="#157">157</a></td></tr
-><tr id="gr_svn4_158"
-
-><td id="158"><a href="#158">158</a></td></tr
-><tr id="gr_svn4_159"
-
-><td id="159"><a href="#159">159</a></td></tr
-><tr id="gr_svn4_160"
-
-><td id="160"><a href="#160">160</a></td></tr
-><tr id="gr_svn4_161"
-
-><td id="161"><a href="#161">161</a></td></tr
-><tr id="gr_svn4_162"
-
-><td id="162"><a href="#162">162</a></td></tr
-><tr id="gr_svn4_163"
-
-><td id="163"><a href="#163">163</a></td></tr
-><tr id="gr_svn4_164"
-
-><td id="164"><a href="#164">164</a></td></tr
-><tr id="gr_svn4_165"
-
-><td id="165"><a href="#165">165</a></td></tr
-><tr id="gr_svn4_166"
-
-><td id="166"><a href="#166">166</a></td></tr
-><tr id="gr_svn4_167"
-
-><td id="167"><a href="#167">167</a></td></tr
-><tr id="gr_svn4_168"
-
-><td id="168"><a href="#168">168</a></td></tr
-><tr id="gr_svn4_169"
-
-><td id="169"><a href="#169">169</a></td></tr
-><tr id="gr_svn4_170"
-
-><td id="170"><a href="#170">170</a></td></tr
-><tr id="gr_svn4_171"
-
-><td id="171"><a href="#171">171</a></td></tr
-><tr id="gr_svn4_172"
-
-><td id="172"><a href="#172">172</a></td></tr
-><tr id="gr_svn4_173"
-
-><td id="173"><a href="#173">173</a></td></tr
-><tr id="gr_svn4_174"
-
-><td id="174"><a href="#174">174</a></td></tr
-><tr id="gr_svn4_175"
-
-><td id="175"><a href="#175">175</a></td></tr
-><tr id="gr_svn4_176"
-
-><td id="176"><a href="#176">176</a></td></tr
-><tr id="gr_svn4_177"
-
-><td id="177"><a href="#177">177</a></td></tr
-><tr id="gr_svn4_178"
-
-><td id="178"><a href="#178">178</a></td></tr
-><tr id="gr_svn4_179"
-
-><td id="179"><a href="#179">179</a></td></tr
-><tr id="gr_svn4_180"
-
-><td id="180"><a href="#180">180</a></td></tr
-><tr id="gr_svn4_181"
-
-><td id="181"><a href="#181">181</a></td></tr
-><tr id="gr_svn4_182"
-
-><td id="182"><a href="#182">182</a></td></tr
-><tr id="gr_svn4_183"
-
-><td id="183"><a href="#183">183</a></td></tr
-><tr id="gr_svn4_184"
-
-><td id="184"><a href="#184">184</a></td></tr
-><tr id="gr_svn4_185"
-
-><td id="185"><a href="#185">185</a></td></tr
-><tr id="gr_svn4_186"
-
-><td id="186"><a href="#186">186</a></td></tr
-><tr id="gr_svn4_187"
-
-><td id="187"><a href="#187">187</a></td></tr
-><tr id="gr_svn4_188"
-
-><td id="188"><a href="#188">188</a></td></tr
-><tr id="gr_svn4_189"
-
-><td id="189"><a href="#189">189</a></td></tr
-><tr id="gr_svn4_190"
-
-><td id="190"><a href="#190">190</a></td></tr
-><tr id="gr_svn4_191"
-
-><td id="191"><a href="#191">191</a></td></tr
-><tr id="gr_svn4_192"
-
-><td id="192"><a href="#192">192</a></td></tr
-><tr id="gr_svn4_193"
-
-><td id="193"><a href="#193">193</a></td></tr
-><tr id="gr_svn4_194"
-
-><td id="194"><a href="#194">194</a></td></tr
-><tr id="gr_svn4_195"
-
-><td id="195"><a href="#195">195</a></td></tr
-><tr id="gr_svn4_196"
-
-><td id="196"><a href="#196">196</a></td></tr
-><tr id="gr_svn4_197"
-
-><td id="197"><a href="#197">197</a></td></tr
-><tr id="gr_svn4_198"
-
-><td id="198"><a href="#198">198</a></td></tr
-><tr id="gr_svn4_199"
-
-><td id="199"><a href="#199">199</a></td></tr
-><tr id="gr_svn4_200"
-
-><td id="200"><a href="#200">200</a></td></tr
-><tr id="gr_svn4_201"
-
-><td id="201"><a href="#201">201</a></td></tr
-><tr id="gr_svn4_202"
-
-><td id="202"><a href="#202">202</a></td></tr
-><tr id="gr_svn4_203"
-
-><td id="203"><a href="#203">203</a></td></tr
-><tr id="gr_svn4_204"
-
-><td id="204"><a href="#204">204</a></td></tr
-><tr id="gr_svn4_205"
-
-><td id="205"><a href="#205">205</a></td></tr
-><tr id="gr_svn4_206"
-
-><td id="206"><a href="#206">206</a></td></tr
-><tr id="gr_svn4_207"
-
-><td id="207"><a href="#207">207</a></td></tr
-><tr id="gr_svn4_208"
-
-><td id="208"><a href="#208">208</a></td></tr
-><tr id="gr_svn4_209"
-
-><td id="209"><a href="#209">209</a></td></tr
-><tr id="gr_svn4_210"
-
-><td id="210"><a href="#210">210</a></td></tr
-><tr id="gr_svn4_211"
-
-><td id="211"><a href="#211">211</a></td></tr
-><tr id="gr_svn4_212"
-
-><td id="212"><a href="#212">212</a></td></tr
-><tr id="gr_svn4_213"
-
-><td id="213"><a href="#213">213</a></td></tr
-><tr id="gr_svn4_214"
-
-><td id="214"><a href="#214">214</a></td></tr
-><tr id="gr_svn4_215"
-
-><td id="215"><a href="#215">215</a></td></tr
-><tr id="gr_svn4_216"
-
-><td id="216"><a href="#216">216</a></td></tr
-><tr id="gr_svn4_217"
-
-><td id="217"><a href="#217">217</a></td></tr
-><tr id="gr_svn4_218"
-
-><td id="218"><a href="#218">218</a></td></tr
-><tr id="gr_svn4_219"
-
-><td id="219"><a href="#219">219</a></td></tr
-><tr id="gr_svn4_220"
-
-><td id="220"><a href="#220">220</a></td></tr
-><tr id="gr_svn4_221"
-
-><td id="221"><a href="#221">221</a></td></tr
-><tr id="gr_svn4_222"
-
-><td id="222"><a href="#222">222</a></td></tr
-><tr id="gr_svn4_223"
-
-><td id="223"><a href="#223">223</a></td></tr
-><tr id="gr_svn4_224"
-
-><td id="224"><a href="#224">224</a></td></tr
-><tr id="gr_svn4_225"
-
-><td id="225"><a href="#225">225</a></td></tr
-><tr id="gr_svn4_226"
-
-><td id="226"><a href="#226">226</a></td></tr
-><tr id="gr_svn4_227"
-
-><td id="227"><a href="#227">227</a></td></tr
-><tr id="gr_svn4_228"
-
-><td id="228"><a href="#228">228</a></td></tr
-><tr id="gr_svn4_229"
-
-><td id="229"><a href="#229">229</a></td></tr
-><tr id="gr_svn4_230"
-
-><td id="230"><a href="#230">230</a></td></tr
-><tr id="gr_svn4_231"
-
-><td id="231"><a href="#231">231</a></td></tr
-><tr id="gr_svn4_232"
-
-><td id="232"><a href="#232">232</a></td></tr
-><tr id="gr_svn4_233"
-
-><td id="233"><a href="#233">233</a></td></tr
-><tr id="gr_svn4_234"
-
-><td id="234"><a href="#234">234</a></td></tr
-><tr id="gr_svn4_235"
-
-><td id="235"><a href="#235">235</a></td></tr
-><tr id="gr_svn4_236"
-
-><td id="236"><a href="#236">236</a></td></tr
-><tr id="gr_svn4_237"
-
-><td id="237"><a href="#237">237</a></td></tr
-><tr id="gr_svn4_238"
-
-><td id="238"><a href="#238">238</a></td></tr
-><tr id="gr_svn4_239"
-
-><td id="239"><a href="#239">239</a></td></tr
-><tr id="gr_svn4_240"
-
-><td id="240"><a href="#240">240</a></td></tr
-><tr id="gr_svn4_241"
-
-><td id="241"><a href="#241">241</a></td></tr
-><tr id="gr_svn4_242"
-
-><td id="242"><a href="#242">242</a></td></tr
-><tr id="gr_svn4_243"
-
-><td id="243"><a href="#243">243</a></td></tr
-><tr id="gr_svn4_244"
-
-><td id="244"><a href="#244">244</a></td></tr
-><tr id="gr_svn4_245"
-
-><td id="245"><a href="#245">245</a></td></tr
-><tr id="gr_svn4_246"
-
-><td id="246"><a href="#246">246</a></td></tr
-><tr id="gr_svn4_247"
-
-><td id="247"><a href="#247">247</a></td></tr
-><tr id="gr_svn4_248"
-
-><td id="248"><a href="#248">248</a></td></tr
-><tr id="gr_svn4_249"
-
-><td id="249"><a href="#249">249</a></td></tr
-><tr id="gr_svn4_250"
-
-><td id="250"><a href="#250">250</a></td></tr
-><tr id="gr_svn4_251"
-
-><td id="251"><a href="#251">251</a></td></tr
-><tr id="gr_svn4_252"
-
-><td id="252"><a href="#252">252</a></td></tr
-><tr id="gr_svn4_253"
-
-><td id="253"><a href="#253">253</a></td></tr
-><tr id="gr_svn4_254"
-
-><td id="254"><a href="#254">254</a></td></tr
-><tr id="gr_svn4_255"
-
-><td id="255"><a href="#255">255</a></td></tr
-><tr id="gr_svn4_256"
-
-><td id="256"><a href="#256">256</a></td></tr
-><tr id="gr_svn4_257"
-
-><td id="257"><a href="#257">257</a></td></tr
-><tr id="gr_svn4_258"
-
-><td id="258"><a href="#258">258</a></td></tr
-><tr id="gr_svn4_259"
-
-><td id="259"><a href="#259">259</a></td></tr
-><tr id="gr_svn4_260"
-
-><td id="260"><a href="#260">260</a></td></tr
-><tr id="gr_svn4_261"
-
-><td id="261"><a href="#261">261</a></td></tr
-><tr id="gr_svn4_262"
-
-><td id="262"><a href="#262">262</a></td></tr
-><tr id="gr_svn4_263"
-
-><td id="263"><a href="#263">263</a></td></tr
-><tr id="gr_svn4_264"
-
-><td id="264"><a href="#264">264</a></td></tr
-><tr id="gr_svn4_265"
-
-><td id="265"><a href="#265">265</a></td></tr
-><tr id="gr_svn4_266"
-
-><td id="266"><a href="#266">266</a></td></tr
-><tr id="gr_svn4_267"
-
-><td id="267"><a href="#267">267</a></td></tr
-><tr id="gr_svn4_268"
-
-><td id="268"><a href="#268">268</a></td></tr
-><tr id="gr_svn4_269"
-
-><td id="269"><a href="#269">269</a></td></tr
-><tr id="gr_svn4_270"
-
-><td id="270"><a href="#270">270</a></td></tr
-><tr id="gr_svn4_271"
-
-><td id="271"><a href="#271">271</a></td></tr
-><tr id="gr_svn4_272"
-
-><td id="272"><a href="#272">272</a></td></tr
-><tr id="gr_svn4_273"
-
-><td id="273"><a href="#273">273</a></td></tr
-><tr id="gr_svn4_274"
-
-><td id="274"><a href="#274">274</a></td></tr
-><tr id="gr_svn4_275"
-
-><td id="275"><a href="#275">275</a></td></tr
-><tr id="gr_svn4_276"
-
-><td id="276"><a href="#276">276</a></td></tr
-><tr id="gr_svn4_277"
-
-><td id="277"><a href="#277">277</a></td></tr
-><tr id="gr_svn4_278"
-
-><td id="278"><a href="#278">278</a></td></tr
-><tr id="gr_svn4_279"
-
-><td id="279"><a href="#279">279</a></td></tr
-><tr id="gr_svn4_280"
-
-><td id="280"><a href="#280">280</a></td></tr
-><tr id="gr_svn4_281"
-
-><td id="281"><a href="#281">281</a></td></tr
-><tr id="gr_svn4_282"
-
-><td id="282"><a href="#282">282</a></td></tr
-><tr id="gr_svn4_283"
-
-><td id="283"><a href="#283">283</a></td></tr
-><tr id="gr_svn4_284"
-
-><td id="284"><a href="#284">284</a></td></tr
-><tr id="gr_svn4_285"
-
-><td id="285"><a href="#285">285</a></td></tr
-><tr id="gr_svn4_286"
-
-><td id="286"><a href="#286">286</a></td></tr
-><tr id="gr_svn4_287"
-
-><td id="287"><a href="#287">287</a></td></tr
-><tr id="gr_svn4_288"
-
-><td id="288"><a href="#288">288</a></td></tr
-><tr id="gr_svn4_289"
-
-><td id="289"><a href="#289">289</a></td></tr
-><tr id="gr_svn4_290"
-
-><td id="290"><a href="#290">290</a></td></tr
-><tr id="gr_svn4_291"
-
-><td id="291"><a href="#291">291</a></td></tr
-><tr id="gr_svn4_292"
-
-><td id="292"><a href="#292">292</a></td></tr
-><tr id="gr_svn4_293"
-
-><td id="293"><a href="#293">293</a></td></tr
-><tr id="gr_svn4_294"
-
-><td id="294"><a href="#294">294</a></td></tr
-><tr id="gr_svn4_295"
-
-><td id="295"><a href="#295">295</a></td></tr
-><tr id="gr_svn4_296"
-
-><td id="296"><a href="#296">296</a></td></tr
-><tr id="gr_svn4_297"
-
-><td id="297"><a href="#297">297</a></td></tr
-><tr id="gr_svn4_298"
-
-><td id="298"><a href="#298">298</a></td></tr
-><tr id="gr_svn4_299"
-
-><td id="299"><a href="#299">299</a></td></tr
-><tr id="gr_svn4_300"
-
-><td id="300"><a href="#300">300</a></td></tr
-><tr id="gr_svn4_301"
-
-><td id="301"><a href="#301">301</a></td></tr
-><tr id="gr_svn4_302"
-
-><td id="302"><a href="#302">302</a></td></tr
-><tr id="gr_svn4_303"
-
-><td id="303"><a href="#303">303</a></td></tr
-><tr id="gr_svn4_304"
-
-><td id="304"><a href="#304">304</a></td></tr
-><tr id="gr_svn4_305"
-
-><td id="305"><a href="#305">305</a></td></tr
-><tr id="gr_svn4_306"
-
-><td id="306"><a href="#306">306</a></td></tr
-><tr id="gr_svn4_307"
-
-><td id="307"><a href="#307">307</a></td></tr
-><tr id="gr_svn4_308"
-
-><td id="308"><a href="#308">308</a></td></tr
-><tr id="gr_svn4_309"
-
-><td id="309"><a href="#309">309</a></td></tr
-><tr id="gr_svn4_310"
-
-><td id="310"><a href="#310">310</a></td></tr
-><tr id="gr_svn4_311"
-
-><td id="311"><a href="#311">311</a></td></tr
-><tr id="gr_svn4_312"
-
-><td id="312"><a href="#312">312</a></td></tr
-><tr id="gr_svn4_313"
-
-><td id="313"><a href="#313">313</a></td></tr
-><tr id="gr_svn4_314"
-
-><td id="314"><a href="#314">314</a></td></tr
-><tr id="gr_svn4_315"
-
-><td id="315"><a href="#315">315</a></td></tr
-><tr id="gr_svn4_316"
-
-><td id="316"><a href="#316">316</a></td></tr
-><tr id="gr_svn4_317"
-
-><td id="317"><a href="#317">317</a></td></tr
-><tr id="gr_svn4_318"
-
-><td id="318"><a href="#318">318</a></td></tr
-><tr id="gr_svn4_319"
-
-><td id="319"><a href="#319">319</a></td></tr
-><tr id="gr_svn4_320"
-
-><td id="320"><a href="#320">320</a></td></tr
-><tr id="gr_svn4_321"
-
-><td id="321"><a href="#321">321</a></td></tr
-><tr id="gr_svn4_322"
-
-><td id="322"><a href="#322">322</a></td></tr
-><tr id="gr_svn4_323"
-
-><td id="323"><a href="#323">323</a></td></tr
-><tr id="gr_svn4_324"
-
-><td id="324"><a href="#324">324</a></td></tr
-><tr id="gr_svn4_325"
-
-><td id="325"><a href="#325">325</a></td></tr
-><tr id="gr_svn4_326"
-
-><td id="326"><a href="#326">326</a></td></tr
-><tr id="gr_svn4_327"
-
-><td id="327"><a href="#327">327</a></td></tr
-><tr id="gr_svn4_328"
-
-><td id="328"><a href="#328">328</a></td></tr
-><tr id="gr_svn4_329"
-
-><td id="329"><a href="#329">329</a></td></tr
-><tr id="gr_svn4_330"
-
-><td id="330"><a href="#330">330</a></td></tr
-><tr id="gr_svn4_331"
-
-><td id="331"><a href="#331">331</a></td></tr
-><tr id="gr_svn4_332"
-
-><td id="332"><a href="#332">332</a></td></tr
-><tr id="gr_svn4_333"
-
-><td id="333"><a href="#333">333</a></td></tr
-><tr id="gr_svn4_334"
-
-><td id="334"><a href="#334">334</a></td></tr
-><tr id="gr_svn4_335"
-
-><td id="335"><a href="#335">335</a></td></tr
-><tr id="gr_svn4_336"
-
-><td id="336"><a href="#336">336</a></td></tr
-><tr id="gr_svn4_337"
-
-><td id="337"><a href="#337">337</a></td></tr
-><tr id="gr_svn4_338"
-
-><td id="338"><a href="#338">338</a></td></tr
-><tr id="gr_svn4_339"
-
-><td id="339"><a href="#339">339</a></td></tr
-><tr id="gr_svn4_340"
-
-><td id="340"><a href="#340">340</a></td></tr
-><tr id="gr_svn4_341"
-
-><td id="341"><a href="#341">341</a></td></tr
-><tr id="gr_svn4_342"
-
-><td id="342"><a href="#342">342</a></td></tr
-><tr id="gr_svn4_343"
-
-><td id="343"><a href="#343">343</a></td></tr
-><tr id="gr_svn4_344"
-
-><td id="344"><a href="#344">344</a></td></tr
-><tr id="gr_svn4_345"
-
-><td id="345"><a href="#345">345</a></td></tr
-><tr id="gr_svn4_346"
-
-><td id="346"><a href="#346">346</a></td></tr
-><tr id="gr_svn4_347"
-
-><td id="347"><a href="#347">347</a></td></tr
-><tr id="gr_svn4_348"
-
-><td id="348"><a href="#348">348</a></td></tr
-><tr id="gr_svn4_349"
-
-><td id="349"><a href="#349">349</a></td></tr
-><tr id="gr_svn4_350"
-
-><td id="350"><a href="#350">350</a></td></tr
-><tr id="gr_svn4_351"
-
-><td id="351"><a href="#351">351</a></td></tr
-><tr id="gr_svn4_352"
-
-><td id="352"><a href="#352">352</a></td></tr
-><tr id="gr_svn4_353"
-
-><td id="353"><a href="#353">353</a></td></tr
-><tr id="gr_svn4_354"
-
-><td id="354"><a href="#354">354</a></td></tr
-><tr id="gr_svn4_355"
-
-><td id="355"><a href="#355">355</a></td></tr
-><tr id="gr_svn4_356"
-
-><td id="356"><a href="#356">356</a></td></tr
-><tr id="gr_svn4_357"
-
-><td id="357"><a href="#357">357</a></td></tr
-><tr id="gr_svn4_358"
-
-><td id="358"><a href="#358">358</a></td></tr
-><tr id="gr_svn4_359"
-
-><td id="359"><a href="#359">359</a></td></tr
-><tr id="gr_svn4_360"
-
-><td id="360"><a href="#360">360</a></td></tr
-><tr id="gr_svn4_361"
-
-><td id="361"><a href="#361">361</a></td></tr
-><tr id="gr_svn4_362"
-
-><td id="362"><a href="#362">362</a></td></tr
-><tr id="gr_svn4_363"
-
-><td id="363"><a href="#363">363</a></td></tr
-><tr id="gr_svn4_364"
-
-><td id="364"><a href="#364">364</a></td></tr
-><tr id="gr_svn4_365"
-
-><td id="365"><a href="#365">365</a></td></tr
-><tr id="gr_svn4_366"
-
-><td id="366"><a href="#366">366</a></td></tr
-><tr id="gr_svn4_367"
-
-><td id="367"><a href="#367">367</a></td></tr
-><tr id="gr_svn4_368"
-
-><td id="368"><a href="#368">368</a></td></tr
-><tr id="gr_svn4_369"
-
-><td id="369"><a href="#369">369</a></td></tr
-><tr id="gr_svn4_370"
-
-><td id="370"><a href="#370">370</a></td></tr
-><tr id="gr_svn4_371"
-
-><td id="371"><a href="#371">371</a></td></tr
-><tr id="gr_svn4_372"
-
-><td id="372"><a href="#372">372</a></td></tr
-><tr id="gr_svn4_373"
-
-><td id="373"><a href="#373">373</a></td></tr
-><tr id="gr_svn4_374"
-
-><td id="374"><a href="#374">374</a></td></tr
-><tr id="gr_svn4_375"
-
-><td id="375"><a href="#375">375</a></td></tr
-><tr id="gr_svn4_376"
-
-><td id="376"><a href="#376">376</a></td></tr
-><tr id="gr_svn4_377"
-
-><td id="377"><a href="#377">377</a></td></tr
-><tr id="gr_svn4_378"
-
-><td id="378"><a href="#378">378</a></td></tr
-><tr id="gr_svn4_379"
-
-><td id="379"><a href="#379">379</a></td></tr
-><tr id="gr_svn4_380"
-
-><td id="380"><a href="#380">380</a></td></tr
-><tr id="gr_svn4_381"
-
-><td id="381"><a href="#381">381</a></td></tr
-><tr id="gr_svn4_382"
-
-><td id="382"><a href="#382">382</a></td></tr
-><tr id="gr_svn4_383"
-
-><td id="383"><a href="#383">383</a></td></tr
-><tr id="gr_svn4_384"
-
-><td id="384"><a href="#384">384</a></td></tr
-><tr id="gr_svn4_385"
-
-><td id="385"><a href="#385">385</a></td></tr
-><tr id="gr_svn4_386"
-
-><td id="386"><a href="#386">386</a></td></tr
-><tr id="gr_svn4_387"
-
-><td id="387"><a href="#387">387</a></td></tr
-><tr id="gr_svn4_388"
-
-><td id="388"><a href="#388">388</a></td></tr
-><tr id="gr_svn4_389"
-
-><td id="389"><a href="#389">389</a></td></tr
-><tr id="gr_svn4_390"
-
-><td id="390"><a href="#390">390</a></td></tr
-><tr id="gr_svn4_391"
-
-><td id="391"><a href="#391">391</a></td></tr
-><tr id="gr_svn4_392"
-
-><td id="392"><a href="#392">392</a></td></tr
-><tr id="gr_svn4_393"
-
-><td id="393"><a href="#393">393</a></td></tr
-><tr id="gr_svn4_394"
-
-><td id="394"><a href="#394">394</a></td></tr
-><tr id="gr_svn4_395"
-
-><td id="395"><a href="#395">395</a></td></tr
-><tr id="gr_svn4_396"
-
-><td id="396"><a href="#396">396</a></td></tr
-><tr id="gr_svn4_397"
-
-><td id="397"><a href="#397">397</a></td></tr
-><tr id="gr_svn4_398"
-
-><td id="398"><a href="#398">398</a></td></tr
-><tr id="gr_svn4_399"
-
-><td id="399"><a href="#399">399</a></td></tr
-><tr id="gr_svn4_400"
-
-><td id="400"><a href="#400">400</a></td></tr
-><tr id="gr_svn4_401"
-
-><td id="401"><a href="#401">401</a></td></tr
-><tr id="gr_svn4_402"
-
-><td id="402"><a href="#402">402</a></td></tr
-><tr id="gr_svn4_403"
-
-><td id="403"><a href="#403">403</a></td></tr
-><tr id="gr_svn4_404"
-
-><td id="404"><a href="#404">404</a></td></tr
-><tr id="gr_svn4_405"
-
-><td id="405"><a href="#405">405</a></td></tr
-><tr id="gr_svn4_406"
-
-><td id="406"><a href="#406">406</a></td></tr
-><tr id="gr_svn4_407"
-
-><td id="407"><a href="#407">407</a></td></tr
-><tr id="gr_svn4_408"
-
-><td id="408"><a href="#408">408</a></td></tr
-><tr id="gr_svn4_409"
-
-><td id="409"><a href="#409">409</a></td></tr
-><tr id="gr_svn4_410"
-
-><td id="410"><a href="#410">410</a></td></tr
-><tr id="gr_svn4_411"
-
-><td id="411"><a href="#411">411</a></td></tr
-><tr id="gr_svn4_412"
-
-><td id="412"><a href="#412">412</a></td></tr
-><tr id="gr_svn4_413"
-
-><td id="413"><a href="#413">413</a></td></tr
-><tr id="gr_svn4_414"
-
-><td id="414"><a href="#414">414</a></td></tr
-><tr id="gr_svn4_415"
-
-><td id="415"><a href="#415">415</a></td></tr
-><tr id="gr_svn4_416"
-
-><td id="416"><a href="#416">416</a></td></tr
-><tr id="gr_svn4_417"
-
-><td id="417"><a href="#417">417</a></td></tr
-><tr id="gr_svn4_418"
-
-><td id="418"><a href="#418">418</a></td></tr
-><tr id="gr_svn4_419"
-
-><td id="419"><a href="#419">419</a></td></tr
-><tr id="gr_svn4_420"
-
-><td id="420"><a href="#420">420</a></td></tr
-><tr id="gr_svn4_421"
-
-><td id="421"><a href="#421">421</a></td></tr
-><tr id="gr_svn4_422"
-
-><td id="422"><a href="#422">422</a></td></tr
-><tr id="gr_svn4_423"
-
-><td id="423"><a href="#423">423</a></td></tr
-><tr id="gr_svn4_424"
-
-><td id="424"><a href="#424">424</a></td></tr
-><tr id="gr_svn4_425"
-
-><td id="425"><a href="#425">425</a></td></tr
-><tr id="gr_svn4_426"
-
-><td id="426"><a href="#426">426</a></td></tr
-><tr id="gr_svn4_427"
-
-><td id="427"><a href="#427">427</a></td></tr
-><tr id="gr_svn4_428"
-
-><td id="428"><a href="#428">428</a></td></tr
-><tr id="gr_svn4_429"
-
-><td id="429"><a href="#429">429</a></td></tr
-><tr id="gr_svn4_430"
-
-><td id="430"><a href="#430">430</a></td></tr
-><tr id="gr_svn4_431"
-
-><td id="431"><a href="#431">431</a></td></tr
-><tr id="gr_svn4_432"
-
-><td id="432"><a href="#432">432</a></td></tr
-><tr id="gr_svn4_433"
-
-><td id="433"><a href="#433">433</a></td></tr
-><tr id="gr_svn4_434"
-
-><td id="434"><a href="#434">434</a></td></tr
-><tr id="gr_svn4_435"
-
-><td id="435"><a href="#435">435</a></td></tr
-><tr id="gr_svn4_436"
-
-><td id="436"><a href="#436">436</a></td></tr
-><tr id="gr_svn4_437"
-
-><td id="437"><a href="#437">437</a></td></tr
-><tr id="gr_svn4_438"
-
-><td id="438"><a href="#438">438</a></td></tr
-><tr id="gr_svn4_439"
-
-><td id="439"><a href="#439">439</a></td></tr
-><tr id="gr_svn4_440"
-
-><td id="440"><a href="#440">440</a></td></tr
-><tr id="gr_svn4_441"
-
-><td id="441"><a href="#441">441</a></td></tr
-><tr id="gr_svn4_442"
-
-><td id="442"><a href="#442">442</a></td></tr
-><tr id="gr_svn4_443"
-
-><td id="443"><a href="#443">443</a></td></tr
-><tr id="gr_svn4_444"
-
-><td id="444"><a href="#444">444</a></td></tr
-><tr id="gr_svn4_445"
-
-><td id="445"><a href="#445">445</a></td></tr
-><tr id="gr_svn4_446"
-
-><td id="446"><a href="#446">446</a></td></tr
-><tr id="gr_svn4_447"
-
-><td id="447"><a href="#447">447</a></td></tr
-><tr id="gr_svn4_448"
-
-><td id="448"><a href="#448">448</a></td></tr
-><tr id="gr_svn4_449"
-
-><td id="449"><a href="#449">449</a></td></tr
-><tr id="gr_svn4_450"
-
-><td id="450"><a href="#450">450</a></td></tr
-><tr id="gr_svn4_451"
-
-><td id="451"><a href="#451">451</a></td></tr
-><tr id="gr_svn4_452"
-
-><td id="452"><a href="#452">452</a></td></tr
-><tr id="gr_svn4_453"
-
-><td id="453"><a href="#453">453</a></td></tr
-><tr id="gr_svn4_454"
-
-><td id="454"><a href="#454">454</a></td></tr
-><tr id="gr_svn4_455"
-
-><td id="455"><a href="#455">455</a></td></tr
-><tr id="gr_svn4_456"
-
-><td id="456"><a href="#456">456</a></td></tr
-><tr id="gr_svn4_457"
-
-><td id="457"><a href="#457">457</a></td></tr
-><tr id="gr_svn4_458"
-
-><td id="458"><a href="#458">458</a></td></tr
-><tr id="gr_svn4_459"
-
-><td id="459"><a href="#459">459</a></td></tr
-><tr id="gr_svn4_460"
-
-><td id="460"><a href="#460">460</a></td></tr
-><tr id="gr_svn4_461"
-
-><td id="461"><a href="#461">461</a></td></tr
-><tr id="gr_svn4_462"
-
-><td id="462"><a href="#462">462</a></td></tr
-><tr id="gr_svn4_463"
-
-><td id="463"><a href="#463">463</a></td></tr
-><tr id="gr_svn4_464"
-
-><td id="464"><a href="#464">464</a></td></tr
-><tr id="gr_svn4_465"
-
-><td id="465"><a href="#465">465</a></td></tr
-><tr id="gr_svn4_466"
-
-><td id="466"><a href="#466">466</a></td></tr
-><tr id="gr_svn4_467"
-
-><td id="467"><a href="#467">467</a></td></tr
-><tr id="gr_svn4_468"
-
-><td id="468"><a href="#468">468</a></td></tr
-><tr id="gr_svn4_469"
-
-><td id="469"><a href="#469">469</a></td></tr
-><tr id="gr_svn4_470"
-
-><td id="470"><a href="#470">470</a></td></tr
-><tr id="gr_svn4_471"
-
-><td id="471"><a href="#471">471</a></td></tr
-><tr id="gr_svn4_472"
-
-><td id="472"><a href="#472">472</a></td></tr
-><tr id="gr_svn4_473"
-
-><td id="473"><a href="#473">473</a></td></tr
-><tr id="gr_svn4_474"
-
-><td id="474"><a href="#474">474</a></td></tr
-><tr id="gr_svn4_475"
-
-><td id="475"><a href="#475">475</a></td></tr
-><tr id="gr_svn4_476"
-
-><td id="476"><a href="#476">476</a></td></tr
-><tr id="gr_svn4_477"
-
-><td id="477"><a href="#477">477</a></td></tr
-><tr id="gr_svn4_478"
-
-><td id="478"><a href="#478">478</a></td></tr
-><tr id="gr_svn4_479"
-
-><td id="479"><a href="#479">479</a></td></tr
-><tr id="gr_svn4_480"
-
-><td id="480"><a href="#480">480</a></td></tr
-><tr id="gr_svn4_481"
-
-><td id="481"><a href="#481">481</a></td></tr
-><tr id="gr_svn4_482"
-
-><td id="482"><a href="#482">482</a></td></tr
-><tr id="gr_svn4_483"
-
-><td id="483"><a href="#483">483</a></td></tr
-><tr id="gr_svn4_484"
-
-><td id="484"><a href="#484">484</a></td></tr
-><tr id="gr_svn4_485"
-
-><td id="485"><a href="#485">485</a></td></tr
-><tr id="gr_svn4_486"
-
-><td id="486"><a href="#486">486</a></td></tr
-><tr id="gr_svn4_487"
-
-><td id="487"><a href="#487">487</a></td></tr
-><tr id="gr_svn4_488"
-
-><td id="488"><a href="#488">488</a></td></tr
-><tr id="gr_svn4_489"
-
-><td id="489"><a href="#489">489</a></td></tr
-><tr id="gr_svn4_490"
-
-><td id="490"><a href="#490">490</a></td></tr
-><tr id="gr_svn4_491"
-
-><td id="491"><a href="#491">491</a></td></tr
-><tr id="gr_svn4_492"
-
-><td id="492"><a href="#492">492</a></td></tr
-><tr id="gr_svn4_493"
-
-><td id="493"><a href="#493">493</a></td></tr
-><tr id="gr_svn4_494"
-
-><td id="494"><a href="#494">494</a></td></tr
-><tr id="gr_svn4_495"
-
-><td id="495"><a href="#495">495</a></td></tr
-><tr id="gr_svn4_496"
-
-><td id="496"><a href="#496">496</a></td></tr
-><tr id="gr_svn4_497"
-
-><td id="497"><a href="#497">497</a></td></tr
-><tr id="gr_svn4_498"
-
-><td id="498"><a href="#498">498</a></td></tr
-><tr id="gr_svn4_499"
-
-><td id="499"><a href="#499">499</a></td></tr
-><tr id="gr_svn4_500"
-
-><td id="500"><a href="#500">500</a></td></tr
-><tr id="gr_svn4_501"
-
-><td id="501"><a href="#501">501</a></td></tr
-><tr id="gr_svn4_502"
-
-><td id="502"><a href="#502">502</a></td></tr
-><tr id="gr_svn4_503"
-
-><td id="503"><a href="#503">503</a></td></tr
-><tr id="gr_svn4_504"
-
-><td id="504"><a href="#504">504</a></td></tr
-><tr id="gr_svn4_505"
-
-><td id="505"><a href="#505">505</a></td></tr
-><tr id="gr_svn4_506"
-
-><td id="506"><a href="#506">506</a></td></tr
-><tr id="gr_svn4_507"
-
-><td id="507"><a href="#507">507</a></td></tr
-><tr id="gr_svn4_508"
-
-><td id="508"><a href="#508">508</a></td></tr
-><tr id="gr_svn4_509"
-
-><td id="509"><a href="#509">509</a></td></tr
-><tr id="gr_svn4_510"
-
-><td id="510"><a href="#510">510</a></td></tr
-><tr id="gr_svn4_511"
-
-><td id="511"><a href="#511">511</a></td></tr
-><tr id="gr_svn4_512"
-
-><td id="512"><a href="#512">512</a></td></tr
-><tr id="gr_svn4_513"
-
-><td id="513"><a href="#513">513</a></td></tr
-><tr id="gr_svn4_514"
-
-><td id="514"><a href="#514">514</a></td></tr
-><tr id="gr_svn4_515"
-
-><td id="515"><a href="#515">515</a></td></tr
-><tr id="gr_svn4_516"
-
-><td id="516"><a href="#516">516</a></td></tr
-><tr id="gr_svn4_517"
-
-><td id="517"><a href="#517">517</a></td></tr
-><tr id="gr_svn4_518"
-
-><td id="518"><a href="#518">518</a></td></tr
-><tr id="gr_svn4_519"
-
-><td id="519"><a href="#519">519</a></td></tr
-><tr id="gr_svn4_520"
-
-><td id="520"><a href="#520">520</a></td></tr
-><tr id="gr_svn4_521"
-
-><td id="521"><a href="#521">521</a></td></tr
-><tr id="gr_svn4_522"
-
-><td id="522"><a href="#522">522</a></td></tr
-><tr id="gr_svn4_523"
-
-><td id="523"><a href="#523">523</a></td></tr
-><tr id="gr_svn4_524"
-
-><td id="524"><a href="#524">524</a></td></tr
-><tr id="gr_svn4_525"
-
-><td id="525"><a href="#525">525</a></td></tr
-><tr id="gr_svn4_526"
-
-><td id="526"><a href="#526">526</a></td></tr
-><tr id="gr_svn4_527"
-
-><td id="527"><a href="#527">527</a></td></tr
-><tr id="gr_svn4_528"
-
-><td id="528"><a href="#528">528</a></td></tr
-><tr id="gr_svn4_529"
-
-><td id="529"><a href="#529">529</a></td></tr
-><tr id="gr_svn4_530"
-
-><td id="530"><a href="#530">530</a></td></tr
-><tr id="gr_svn4_531"
-
-><td id="531"><a href="#531">531</a></td></tr
-><tr id="gr_svn4_532"
-
-><td id="532"><a href="#532">532</a></td></tr
-><tr id="gr_svn4_533"
-
-><td id="533"><a href="#533">533</a></td></tr
-><tr id="gr_svn4_534"
-
-><td id="534"><a href="#534">534</a></td></tr
-><tr id="gr_svn4_535"
-
-><td id="535"><a href="#535">535</a></td></tr
-><tr id="gr_svn4_536"
-
-><td id="536"><a href="#536">536</a></td></tr
-><tr id="gr_svn4_537"
-
-><td id="537"><a href="#537">537</a></td></tr
-><tr id="gr_svn4_538"
-
-><td id="538"><a href="#538">538</a></td></tr
-><tr id="gr_svn4_539"
-
-><td id="539"><a href="#539">539</a></td></tr
-><tr id="gr_svn4_540"
-
-><td id="540"><a href="#540">540</a></td></tr
-><tr id="gr_svn4_541"
-
-><td id="541"><a href="#541">541</a></td></tr
-><tr id="gr_svn4_542"
-
-><td id="542"><a href="#542">542</a></td></tr
-><tr id="gr_svn4_543"
-
-><td id="543"><a href="#543">543</a></td></tr
-><tr id="gr_svn4_544"
-
-><td id="544"><a href="#544">544</a></td></tr
-><tr id="gr_svn4_545"
-
-><td id="545"><a href="#545">545</a></td></tr
-><tr id="gr_svn4_546"
-
-><td id="546"><a href="#546">546</a></td></tr
-><tr id="gr_svn4_547"
-
-><td id="547"><a href="#547">547</a></td></tr
-><tr id="gr_svn4_548"
-
-><td id="548"><a href="#548">548</a></td></tr
-><tr id="gr_svn4_549"
-
-><td id="549"><a href="#549">549</a></td></tr
-><tr id="gr_svn4_550"
-
-><td id="550"><a href="#550">550</a></td></tr
-><tr id="gr_svn4_551"
-
-><td id="551"><a href="#551">551</a></td></tr
-><tr id="gr_svn4_552"
-
-><td id="552"><a href="#552">552</a></td></tr
-><tr id="gr_svn4_553"
-
-><td id="553"><a href="#553">553</a></td></tr
-><tr id="gr_svn4_554"
-
-><td id="554"><a href="#554">554</a></td></tr
-><tr id="gr_svn4_555"
-
-><td id="555"><a href="#555">555</a></td></tr
-><tr id="gr_svn4_556"
-
-><td id="556"><a href="#556">556</a></td></tr
-><tr id="gr_svn4_557"
-
-><td id="557"><a href="#557">557</a></td></tr
-><tr id="gr_svn4_558"
-
-><td id="558"><a href="#558">558</a></td></tr
-><tr id="gr_svn4_559"
-
-><td id="559"><a href="#559">559</a></td></tr
-><tr id="gr_svn4_560"
-
-><td id="560"><a href="#560">560</a></td></tr
-><tr id="gr_svn4_561"
-
-><td id="561"><a href="#561">561</a></td></tr
-><tr id="gr_svn4_562"
-
-><td id="562"><a href="#562">562</a></td></tr
-><tr id="gr_svn4_563"
-
-><td id="563"><a href="#563">563</a></td></tr
-><tr id="gr_svn4_564"
-
-><td id="564"><a href="#564">564</a></td></tr
-><tr id="gr_svn4_565"
-
-><td id="565"><a href="#565">565</a></td></tr
-><tr id="gr_svn4_566"
-
-><td id="566"><a href="#566">566</a></td></tr
-><tr id="gr_svn4_567"
-
-><td id="567"><a href="#567">567</a></td></tr
-><tr id="gr_svn4_568"
-
-><td id="568"><a href="#568">568</a></td></tr
-><tr id="gr_svn4_569"
-
-><td id="569"><a href="#569">569</a></td></tr
-><tr id="gr_svn4_570"
-
-><td id="570"><a href="#570">570</a></td></tr
-><tr id="gr_svn4_571"
-
-><td id="571"><a href="#571">571</a></td></tr
-><tr id="gr_svn4_572"
-
-><td id="572"><a href="#572">572</a></td></tr
-><tr id="gr_svn4_573"
-
-><td id="573"><a href="#573">573</a></td></tr
-><tr id="gr_svn4_574"
-
-><td id="574"><a href="#574">574</a></td></tr
-><tr id="gr_svn4_575"
-
-><td id="575"><a href="#575">575</a></td></tr
-><tr id="gr_svn4_576"
-
-><td id="576"><a href="#576">576</a></td></tr
-><tr id="gr_svn4_577"
-
-><td id="577"><a href="#577">577</a></td></tr
-><tr id="gr_svn4_578"
-
-><td id="578"><a href="#578">578</a></td></tr
-><tr id="gr_svn4_579"
-
-><td id="579"><a href="#579">579</a></td></tr
-><tr id="gr_svn4_580"
-
-><td id="580"><a href="#580">580</a></td></tr
-><tr id="gr_svn4_581"
-
-><td id="581"><a href="#581">581</a></td></tr
-><tr id="gr_svn4_582"
-
-><td id="582"><a href="#582">582</a></td></tr
-><tr id="gr_svn4_583"
-
-><td id="583"><a href="#583">583</a></td></tr
-><tr id="gr_svn4_584"
-
-><td id="584"><a href="#584">584</a></td></tr
-><tr id="gr_svn4_585"
-
-><td id="585"><a href="#585">585</a></td></tr
-><tr id="gr_svn4_586"
-
-><td id="586"><a href="#586">586</a></td></tr
-><tr id="gr_svn4_587"
-
-><td id="587"><a href="#587">587</a></td></tr
-><tr id="gr_svn4_588"
-
-><td id="588"><a href="#588">588</a></td></tr
-><tr id="gr_svn4_589"
-
-><td id="589"><a href="#589">589</a></td></tr
-><tr id="gr_svn4_590"
-
-><td id="590"><a href="#590">590</a></td></tr
-><tr id="gr_svn4_591"
-
-><td id="591"><a href="#591">591</a></td></tr
-><tr id="gr_svn4_592"
-
-><td id="592"><a href="#592">592</a></td></tr
-><tr id="gr_svn4_593"
-
-><td id="593"><a href="#593">593</a></td></tr
-><tr id="gr_svn4_594"
-
-><td id="594"><a href="#594">594</a></td></tr
-><tr id="gr_svn4_595"
-
-><td id="595"><a href="#595">595</a></td></tr
-><tr id="gr_svn4_596"
-
-><td id="596"><a href="#596">596</a></td></tr
-><tr id="gr_svn4_597"
-
-><td id="597"><a href="#597">597</a></td></tr
-><tr id="gr_svn4_598"
-
-><td id="598"><a href="#598">598</a></td></tr
-><tr id="gr_svn4_599"
-
-><td id="599"><a href="#599">599</a></td></tr
-><tr id="gr_svn4_600"
-
-><td id="600"><a href="#600">600</a></td></tr
-><tr id="gr_svn4_601"
-
-><td id="601"><a href="#601">601</a></td></tr
-><tr id="gr_svn4_602"
-
-><td id="602"><a href="#602">602</a></td></tr
-><tr id="gr_svn4_603"
-
-><td id="603"><a href="#603">603</a></td></tr
-><tr id="gr_svn4_604"
-
-><td id="604"><a href="#604">604</a></td></tr
-><tr id="gr_svn4_605"
-
-><td id="605"><a href="#605">605</a></td></tr
-><tr id="gr_svn4_606"
-
-><td id="606"><a href="#606">606</a></td></tr
-><tr id="gr_svn4_607"
-
-><td id="607"><a href="#607">607</a></td></tr
-><tr id="gr_svn4_608"
-
-><td id="608"><a href="#608">608</a></td></tr
-><tr id="gr_svn4_609"
-
-><td id="609"><a href="#609">609</a></td></tr
-><tr id="gr_svn4_610"
-
-><td id="610"><a href="#610">610</a></td></tr
-><tr id="gr_svn4_611"
-
-><td id="611"><a href="#611">611</a></td></tr
-><tr id="gr_svn4_612"
-
-><td id="612"><a href="#612">612</a></td></tr
-><tr id="gr_svn4_613"
-
-><td id="613"><a href="#613">613</a></td></tr
-><tr id="gr_svn4_614"
-
-><td id="614"><a href="#614">614</a></td></tr
-><tr id="gr_svn4_615"
-
-><td id="615"><a href="#615">615</a></td></tr
-><tr id="gr_svn4_616"
-
-><td id="616"><a href="#616">616</a></td></tr
-><tr id="gr_svn4_617"
-
-><td id="617"><a href="#617">617</a></td></tr
-><tr id="gr_svn4_618"
-
-><td id="618"><a href="#618">618</a></td></tr
-><tr id="gr_svn4_619"
-
-><td id="619"><a href="#619">619</a></td></tr
-><tr id="gr_svn4_620"
-
-><td id="620"><a href="#620">620</a></td></tr
-><tr id="gr_svn4_621"
-
-><td id="621"><a href="#621">621</a></td></tr
-><tr id="gr_svn4_622"
-
-><td id="622"><a href="#622">622</a></td></tr
-><tr id="gr_svn4_623"
-
-><td id="623"><a href="#623">623</a></td></tr
-><tr id="gr_svn4_624"
-
-><td id="624"><a href="#624">624</a></td></tr
-><tr id="gr_svn4_625"
-
-><td id="625"><a href="#625">625</a></td></tr
-><tr id="gr_svn4_626"
-
-><td id="626"><a href="#626">626</a></td></tr
-><tr id="gr_svn4_627"
-
-><td id="627"><a href="#627">627</a></td></tr
-><tr id="gr_svn4_628"
-
-><td id="628"><a href="#628">628</a></td></tr
-><tr id="gr_svn4_629"
-
-><td id="629"><a href="#629">629</a></td></tr
-><tr id="gr_svn4_630"
-
-><td id="630"><a href="#630">630</a></td></tr
-><tr id="gr_svn4_631"
-
-><td id="631"><a href="#631">631</a></td></tr
-><tr id="gr_svn4_632"
-
-><td id="632"><a href="#632">632</a></td></tr
-><tr id="gr_svn4_633"
-
-><td id="633"><a href="#633">633</a></td></tr
-><tr id="gr_svn4_634"
-
-><td id="634"><a href="#634">634</a></td></tr
-><tr id="gr_svn4_635"
-
-><td id="635"><a href="#635">635</a></td></tr
-><tr id="gr_svn4_636"
-
-><td id="636"><a href="#636">636</a></td></tr
-><tr id="gr_svn4_637"
-
-><td id="637"><a href="#637">637</a></td></tr
-><tr id="gr_svn4_638"
-
-><td id="638"><a href="#638">638</a></td></tr
-><tr id="gr_svn4_639"
-
-><td id="639"><a href="#639">639</a></td></tr
-><tr id="gr_svn4_640"
-
-><td id="640"><a href="#640">640</a></td></tr
-><tr id="gr_svn4_641"
-
-><td id="641"><a href="#641">641</a></td></tr
-><tr id="gr_svn4_642"
-
-><td id="642"><a href="#642">642</a></td></tr
-><tr id="gr_svn4_643"
-
-><td id="643"><a href="#643">643</a></td></tr
-><tr id="gr_svn4_644"
-
-><td id="644"><a href="#644">644</a></td></tr
-><tr id="gr_svn4_645"
-
-><td id="645"><a href="#645">645</a></td></tr
-><tr id="gr_svn4_646"
-
-><td id="646"><a href="#646">646</a></td></tr
-><tr id="gr_svn4_647"
-
-><td id="647"><a href="#647">647</a></td></tr
-><tr id="gr_svn4_648"
-
-><td id="648"><a href="#648">648</a></td></tr
-><tr id="gr_svn4_649"
-
-><td id="649"><a href="#649">649</a></td></tr
-><tr id="gr_svn4_650"
-
-><td id="650"><a href="#650">650</a></td></tr
-><tr id="gr_svn4_651"
-
-><td id="651"><a href="#651">651</a></td></tr
-><tr id="gr_svn4_652"
-
-><td id="652"><a href="#652">652</a></td></tr
-><tr id="gr_svn4_653"
-
-><td id="653"><a href="#653">653</a></td></tr
-><tr id="gr_svn4_654"
-
-><td id="654"><a href="#654">654</a></td></tr
-><tr id="gr_svn4_655"
-
-><td id="655"><a href="#655">655</a></td></tr
-><tr id="gr_svn4_656"
-
-><td id="656"><a href="#656">656</a></td></tr
-><tr id="gr_svn4_657"
-
-><td id="657"><a href="#657">657</a></td></tr
-><tr id="gr_svn4_658"
-
-><td id="658"><a href="#658">658</a></td></tr
-><tr id="gr_svn4_659"
-
-><td id="659"><a href="#659">659</a></td></tr
-><tr id="gr_svn4_660"
-
-><td id="660"><a href="#660">660</a></td></tr
-><tr id="gr_svn4_661"
-
-><td id="661"><a href="#661">661</a></td></tr
-><tr id="gr_svn4_662"
-
-><td id="662"><a href="#662">662</a></td></tr
-><tr id="gr_svn4_663"
-
-><td id="663"><a href="#663">663</a></td></tr
-><tr id="gr_svn4_664"
-
-><td id="664"><a href="#664">664</a></td></tr
-><tr id="gr_svn4_665"
-
-><td id="665"><a href="#665">665</a></td></tr
-><tr id="gr_svn4_666"
-
-><td id="666"><a href="#666">666</a></td></tr
-><tr id="gr_svn4_667"
-
-><td id="667"><a href="#667">667</a></td></tr
-><tr id="gr_svn4_668"
-
-><td id="668"><a href="#668">668</a></td></tr
-><tr id="gr_svn4_669"
-
-><td id="669"><a href="#669">669</a></td></tr
-><tr id="gr_svn4_670"
-
-><td id="670"><a href="#670">670</a></td></tr
-><tr id="gr_svn4_671"
-
-><td id="671"><a href="#671">671</a></td></tr
-><tr id="gr_svn4_672"
-
-><td id="672"><a href="#672">672</a></td></tr
-><tr id="gr_svn4_673"
-
-><td id="673"><a href="#673">673</a></td></tr
-><tr id="gr_svn4_674"
-
-><td id="674"><a href="#674">674</a></td></tr
-><tr id="gr_svn4_675"
-
-><td id="675"><a href="#675">675</a></td></tr
-><tr id="gr_svn4_676"
-
-><td id="676"><a href="#676">676</a></td></tr
-><tr id="gr_svn4_677"
-
-><td id="677"><a href="#677">677</a></td></tr
-><tr id="gr_svn4_678"
-
-><td id="678"><a href="#678">678</a></td></tr
-><tr id="gr_svn4_679"
-
-><td id="679"><a href="#679">679</a></td></tr
-><tr id="gr_svn4_680"
-
-><td id="680"><a href="#680">680</a></td></tr
-><tr id="gr_svn4_681"
-
-><td id="681"><a href="#681">681</a></td></tr
-><tr id="gr_svn4_682"
-
-><td id="682"><a href="#682">682</a></td></tr
-><tr id="gr_svn4_683"
-
-><td id="683"><a href="#683">683</a></td></tr
-><tr id="gr_svn4_684"
-
-><td id="684"><a href="#684">684</a></td></tr
-><tr id="gr_svn4_685"
-
-><td id="685"><a href="#685">685</a></td></tr
-><tr id="gr_svn4_686"
-
-><td id="686"><a href="#686">686</a></td></tr
-><tr id="gr_svn4_687"
-
-><td id="687"><a href="#687">687</a></td></tr
-><tr id="gr_svn4_688"
-
-><td id="688"><a href="#688">688</a></td></tr
-><tr id="gr_svn4_689"
-
-><td id="689"><a href="#689">689</a></td></tr
-><tr id="gr_svn4_690"
-
-><td id="690"><a href="#690">690</a></td></tr
-><tr id="gr_svn4_691"
-
-><td id="691"><a href="#691">691</a></td></tr
-><tr id="gr_svn4_692"
-
-><td id="692"><a href="#692">692</a></td></tr
-><tr id="gr_svn4_693"
-
-><td id="693"><a href="#693">693</a></td></tr
-><tr id="gr_svn4_694"
-
-><td id="694"><a href="#694">694</a></td></tr
-><tr id="gr_svn4_695"
-
-><td id="695"><a href="#695">695</a></td></tr
-><tr id="gr_svn4_696"
-
-><td id="696"><a href="#696">696</a></td></tr
-><tr id="gr_svn4_697"
-
-><td id="697"><a href="#697">697</a></td></tr
-><tr id="gr_svn4_698"
-
-><td id="698"><a href="#698">698</a></td></tr
-><tr id="gr_svn4_699"
-
-><td id="699"><a href="#699">699</a></td></tr
-><tr id="gr_svn4_700"
-
-><td id="700"><a href="#700">700</a></td></tr
-><tr id="gr_svn4_701"
-
-><td id="701"><a href="#701">701</a></td></tr
-><tr id="gr_svn4_702"
-
-><td id="702"><a href="#702">702</a></td></tr
-><tr id="gr_svn4_703"
-
-><td id="703"><a href="#703">703</a></td></tr
-><tr id="gr_svn4_704"
-
-><td id="704"><a href="#704">704</a></td></tr
-><tr id="gr_svn4_705"
-
-><td id="705"><a href="#705">705</a></td></tr
-><tr id="gr_svn4_706"
-
-><td id="706"><a href="#706">706</a></td></tr
-><tr id="gr_svn4_707"
-
-><td id="707"><a href="#707">707</a></td></tr
-><tr id="gr_svn4_708"
-
-><td id="708"><a href="#708">708</a></td></tr
-><tr id="gr_svn4_709"
-
-><td id="709"><a href="#709">709</a></td></tr
-><tr id="gr_svn4_710"
-
-><td id="710"><a href="#710">710</a></td></tr
-><tr id="gr_svn4_711"
-
-><td id="711"><a href="#711">711</a></td></tr
-><tr id="gr_svn4_712"
-
-><td id="712"><a href="#712">712</a></td></tr
-><tr id="gr_svn4_713"
-
-><td id="713"><a href="#713">713</a></td></tr
-><tr id="gr_svn4_714"
-
-><td id="714"><a href="#714">714</a></td></tr
-><tr id="gr_svn4_715"
-
-><td id="715"><a href="#715">715</a></td></tr
-><tr id="gr_svn4_716"
-
-><td id="716"><a href="#716">716</a></td></tr
-><tr id="gr_svn4_717"
-
-><td id="717"><a href="#717">717</a></td></tr
-><tr id="gr_svn4_718"
-
-><td id="718"><a href="#718">718</a></td></tr
-><tr id="gr_svn4_719"
-
-><td id="719"><a href="#719">719</a></td></tr
-><tr id="gr_svn4_720"
-
-><td id="720"><a href="#720">720</a></td></tr
-><tr id="gr_svn4_721"
-
-><td id="721"><a href="#721">721</a></td></tr
-><tr id="gr_svn4_722"
-
-><td id="722"><a href="#722">722</a></td></tr
-><tr id="gr_svn4_723"
-
-><td id="723"><a href="#723">723</a></td></tr
-><tr id="gr_svn4_724"
-
-><td id="724"><a href="#724">724</a></td></tr
-><tr id="gr_svn4_725"
-
-><td id="725"><a href="#725">725</a></td></tr
-><tr id="gr_svn4_726"
-
-><td id="726"><a href="#726">726</a></td></tr
-><tr id="gr_svn4_727"
-
-><td id="727"><a href="#727">727</a></td></tr
-><tr id="gr_svn4_728"
-
-><td id="728"><a href="#728">728</a></td></tr
-><tr id="gr_svn4_729"
-
-><td id="729"><a href="#729">729</a></td></tr
-><tr id="gr_svn4_730"
-
-><td id="730"><a href="#730">730</a></td></tr
-><tr id="gr_svn4_731"
-
-><td id="731"><a href="#731">731</a></td></tr
-><tr id="gr_svn4_732"
-
-><td id="732"><a href="#732">732</a></td></tr
-><tr id="gr_svn4_733"
-
-><td id="733"><a href="#733">733</a></td></tr
-><tr id="gr_svn4_734"
-
-><td id="734"><a href="#734">734</a></td></tr
-><tr id="gr_svn4_735"
-
-><td id="735"><a href="#735">735</a></td></tr
-><tr id="gr_svn4_736"
-
-><td id="736"><a href="#736">736</a></td></tr
-><tr id="gr_svn4_737"
-
-><td id="737"><a href="#737">737</a></td></tr
-><tr id="gr_svn4_738"
-
-><td id="738"><a href="#738">738</a></td></tr
-><tr id="gr_svn4_739"
-
-><td id="739"><a href="#739">739</a></td></tr
-><tr id="gr_svn4_740"
-
-><td id="740"><a href="#740">740</a></td></tr
-><tr id="gr_svn4_741"
-
-><td id="741"><a href="#741">741</a></td></tr
-><tr id="gr_svn4_742"
-
-><td id="742"><a href="#742">742</a></td></tr
-><tr id="gr_svn4_743"
-
-><td id="743"><a href="#743">743</a></td></tr
-><tr id="gr_svn4_744"
-
-><td id="744"><a href="#744">744</a></td></tr
-><tr id="gr_svn4_745"
-
-><td id="745"><a href="#745">745</a></td></tr
-><tr id="gr_svn4_746"
-
-><td id="746"><a href="#746">746</a></td></tr
-><tr id="gr_svn4_747"
-
-><td id="747"><a href="#747">747</a></td></tr
-><tr id="gr_svn4_748"
-
-><td id="748"><a href="#748">748</a></td></tr
-><tr id="gr_svn4_749"
-
-><td id="749"><a href="#749">749</a></td></tr
-><tr id="gr_svn4_750"
-
-><td id="750"><a href="#750">750</a></td></tr
-><tr id="gr_svn4_751"
-
-><td id="751"><a href="#751">751</a></td></tr
-><tr id="gr_svn4_752"
-
-><td id="752"><a href="#752">752</a></td></tr
-><tr id="gr_svn4_753"
-
-><td id="753"><a href="#753">753</a></td></tr
-><tr id="gr_svn4_754"
-
-><td id="754"><a href="#754">754</a></td></tr
-><tr id="gr_svn4_755"
-
-><td id="755"><a href="#755">755</a></td></tr
-><tr id="gr_svn4_756"
-
-><td id="756"><a href="#756">756</a></td></tr
-><tr id="gr_svn4_757"
-
-><td id="757"><a href="#757">757</a></td></tr
-><tr id="gr_svn4_758"
-
-><td id="758"><a href="#758">758</a></td></tr
-><tr id="gr_svn4_759"
-
-><td id="759"><a href="#759">759</a></td></tr
-><tr id="gr_svn4_760"
-
-><td id="760"><a href="#760">760</a></td></tr
-><tr id="gr_svn4_761"
-
-><td id="761"><a href="#761">761</a></td></tr
-><tr id="gr_svn4_762"
-
-><td id="762"><a href="#762">762</a></td></tr
-><tr id="gr_svn4_763"
-
-><td id="763"><a href="#763">763</a></td></tr
-><tr id="gr_svn4_764"
-
-><td id="764"><a href="#764">764</a></td></tr
-><tr id="gr_svn4_765"
-
-><td id="765"><a href="#765">765</a></td></tr
-><tr id="gr_svn4_766"
-
-><td id="766"><a href="#766">766</a></td></tr
-><tr id="gr_svn4_767"
-
-><td id="767"><a href="#767">767</a></td></tr
-><tr id="gr_svn4_768"
-
-><td id="768"><a href="#768">768</a></td></tr
-><tr id="gr_svn4_769"
-
-><td id="769"><a href="#769">769</a></td></tr
-><tr id="gr_svn4_770"
-
-><td id="770"><a href="#770">770</a></td></tr
-><tr id="gr_svn4_771"
-
-><td id="771"><a href="#771">771</a></td></tr
-><tr id="gr_svn4_772"
-
-><td id="772"><a href="#772">772</a></td></tr
-><tr id="gr_svn4_773"
-
-><td id="773"><a href="#773">773</a></td></tr
-><tr id="gr_svn4_774"
-
-><td id="774"><a href="#774">774</a></td></tr
-><tr id="gr_svn4_775"
-
-><td id="775"><a href="#775">775</a></td></tr
-><tr id="gr_svn4_776"
-
-><td id="776"><a href="#776">776</a></td></tr
-><tr id="gr_svn4_777"
-
-><td id="777"><a href="#777">777</a></td></tr
-><tr id="gr_svn4_778"
-
-><td id="778"><a href="#778">778</a></td></tr
-><tr id="gr_svn4_779"
-
-><td id="779"><a href="#779">779</a></td></tr
-><tr id="gr_svn4_780"
-
-><td id="780"><a href="#780">780</a></td></tr
-><tr id="gr_svn4_781"
-
-><td id="781"><a href="#781">781</a></td></tr
-><tr id="gr_svn4_782"
-
-><td id="782"><a href="#782">782</a></td></tr
-><tr id="gr_svn4_783"
-
-><td id="783"><a href="#783">783</a></td></tr
-><tr id="gr_svn4_784"
-
-><td id="784"><a href="#784">784</a></td></tr
-><tr id="gr_svn4_785"
-
-><td id="785"><a href="#785">785</a></td></tr
-><tr id="gr_svn4_786"
-
-><td id="786"><a href="#786">786</a></td></tr
-><tr id="gr_svn4_787"
-
-><td id="787"><a href="#787">787</a></td></tr
-><tr id="gr_svn4_788"
-
-><td id="788"><a href="#788">788</a></td></tr
-><tr id="gr_svn4_789"
-
-><td id="789"><a href="#789">789</a></td></tr
-><tr id="gr_svn4_790"
-
-><td id="790"><a href="#790">790</a></td></tr
-><tr id="gr_svn4_791"
-
-><td id="791"><a href="#791">791</a></td></tr
-><tr id="gr_svn4_792"
-
-><td id="792"><a href="#792">792</a></td></tr
-><tr id="gr_svn4_793"
-
-><td id="793"><a href="#793">793</a></td></tr
-><tr id="gr_svn4_794"
-
-><td id="794"><a href="#794">794</a></td></tr
-><tr id="gr_svn4_795"
-
-><td id="795"><a href="#795">795</a></td></tr
-><tr id="gr_svn4_796"
-
-><td id="796"><a href="#796">796</a></td></tr
-><tr id="gr_svn4_797"
-
-><td id="797"><a href="#797">797</a></td></tr
-><tr id="gr_svn4_798"
-
-><td id="798"><a href="#798">798</a></td></tr
-><tr id="gr_svn4_799"
-
-><td id="799"><a href="#799">799</a></td></tr
-><tr id="gr_svn4_800"
-
-><td id="800"><a href="#800">800</a></td></tr
-><tr id="gr_svn4_801"
-
-><td id="801"><a href="#801">801</a></td></tr
-><tr id="gr_svn4_802"
-
-><td id="802"><a href="#802">802</a></td></tr
-><tr id="gr_svn4_803"
-
-><td id="803"><a href="#803">803</a></td></tr
-><tr id="gr_svn4_804"
-
-><td id="804"><a href="#804">804</a></td></tr
-><tr id="gr_svn4_805"
-
-><td id="805"><a href="#805">805</a></td></tr
-><tr id="gr_svn4_806"
-
-><td id="806"><a href="#806">806</a></td></tr
-><tr id="gr_svn4_807"
-
-><td id="807"><a href="#807">807</a></td></tr
-><tr id="gr_svn4_808"
-
-><td id="808"><a href="#808">808</a></td></tr
-><tr id="gr_svn4_809"
-
-><td id="809"><a href="#809">809</a></td></tr
-><tr id="gr_svn4_810"
-
-><td id="810"><a href="#810">810</a></td></tr
-><tr id="gr_svn4_811"
-
-><td id="811"><a href="#811">811</a></td></tr
-><tr id="gr_svn4_812"
-
-><td id="812"><a href="#812">812</a></td></tr
-><tr id="gr_svn4_813"
-
-><td id="813"><a href="#813">813</a></td></tr
-><tr id="gr_svn4_814"
-
-><td id="814"><a href="#814">814</a></td></tr
-><tr id="gr_svn4_815"
-
-><td id="815"><a href="#815">815</a></td></tr
-><tr id="gr_svn4_816"
-
-><td id="816"><a href="#816">816</a></td></tr
-><tr id="gr_svn4_817"
-
-><td id="817"><a href="#817">817</a></td></tr
-><tr id="gr_svn4_818"
-
-><td id="818"><a href="#818">818</a></td></tr
-><tr id="gr_svn4_819"
-
-><td id="819"><a href="#819">819</a></td></tr
-><tr id="gr_svn4_820"
-
-><td id="820"><a href="#820">820</a></td></tr
-><tr id="gr_svn4_821"
-
-><td id="821"><a href="#821">821</a></td></tr
-><tr id="gr_svn4_822"
-
-><td id="822"><a href="#822">822</a></td></tr
-><tr id="gr_svn4_823"
-
-><td id="823"><a href="#823">823</a></td></tr
-><tr id="gr_svn4_824"
-
-><td id="824"><a href="#824">824</a></td></tr
-><tr id="gr_svn4_825"
-
-><td id="825"><a href="#825">825</a></td></tr
-><tr id="gr_svn4_826"
-
-><td id="826"><a href="#826">826</a></td></tr
-><tr id="gr_svn4_827"
-
-><td id="827"><a href="#827">827</a></td></tr
-><tr id="gr_svn4_828"
-
-><td id="828"><a href="#828">828</a></td></tr
-><tr id="gr_svn4_829"
-
-><td id="829"><a href="#829">829</a></td></tr
-><tr id="gr_svn4_830"
-
-><td id="830"><a href="#830">830</a></td></tr
-><tr id="gr_svn4_831"
-
-><td id="831"><a href="#831">831</a></td></tr
-><tr id="gr_svn4_832"
-
-><td id="832"><a href="#832">832</a></td></tr
-><tr id="gr_svn4_833"
-
-><td id="833"><a href="#833">833</a></td></tr
-><tr id="gr_svn4_834"
-
-><td id="834"><a href="#834">834</a></td></tr
-><tr id="gr_svn4_835"
-
-><td id="835"><a href="#835">835</a></td></tr
-><tr id="gr_svn4_836"
-
-><td id="836"><a href="#836">836</a></td></tr
-><tr id="gr_svn4_837"
-
-><td id="837"><a href="#837">837</a></td></tr
-><tr id="gr_svn4_838"
-
-><td id="838"><a href="#838">838</a></td></tr
-><tr id="gr_svn4_839"
-
-><td id="839"><a href="#839">839</a></td></tr
-><tr id="gr_svn4_840"
-
-><td id="840"><a href="#840">840</a></td></tr
-><tr id="gr_svn4_841"
-
-><td id="841"><a href="#841">841</a></td></tr
-><tr id="gr_svn4_842"
-
-><td id="842"><a href="#842">842</a></td></tr
-><tr id="gr_svn4_843"
-
-><td id="843"><a href="#843">843</a></td></tr
-><tr id="gr_svn4_844"
-
-><td id="844"><a href="#844">844</a></td></tr
-><tr id="gr_svn4_845"
-
-><td id="845"><a href="#845">845</a></td></tr
-><tr id="gr_svn4_846"
-
-><td id="846"><a href="#846">846</a></td></tr
-><tr id="gr_svn4_847"
-
-><td id="847"><a href="#847">847</a></td></tr
-><tr id="gr_svn4_848"
-
-><td id="848"><a href="#848">848</a></td></tr
-><tr id="gr_svn4_849"
-
-><td id="849"><a href="#849">849</a></td></tr
-><tr id="gr_svn4_850"
-
-><td id="850"><a href="#850">850</a></td></tr
-><tr id="gr_svn4_851"
-
-><td id="851"><a href="#851">851</a></td></tr
-><tr id="gr_svn4_852"
-
-><td id="852"><a href="#852">852</a></td></tr
-><tr id="gr_svn4_853"
-
-><td id="853"><a href="#853">853</a></td></tr
-><tr id="gr_svn4_854"
-
-><td id="854"><a href="#854">854</a></td></tr
-><tr id="gr_svn4_855"
-
-><td id="855"><a href="#855">855</a></td></tr
-><tr id="gr_svn4_856"
-
-><td id="856"><a href="#856">856</a></td></tr
-><tr id="gr_svn4_857"
-
-><td id="857"><a href="#857">857</a></td></tr
-><tr id="gr_svn4_858"
-
-><td id="858"><a href="#858">858</a></td></tr
-><tr id="gr_svn4_859"
-
-><td id="859"><a href="#859">859</a></td></tr
-><tr id="gr_svn4_860"
-
-><td id="860"><a href="#860">860</a></td></tr
-><tr id="gr_svn4_861"
-
-><td id="861"><a href="#861">861</a></td></tr
-><tr id="gr_svn4_862"
-
-><td id="862"><a href="#862">862</a></td></tr
-><tr id="gr_svn4_863"
-
-><td id="863"><a href="#863">863</a></td></tr
-><tr id="gr_svn4_864"
-
-><td id="864"><a href="#864">864</a></td></tr
-><tr id="gr_svn4_865"
-
-><td id="865"><a href="#865">865</a></td></tr
-><tr id="gr_svn4_866"
-
-><td id="866"><a href="#866">866</a></td></tr
-><tr id="gr_svn4_867"
-
-><td id="867"><a href="#867">867</a></td></tr
-><tr id="gr_svn4_868"
-
-><td id="868"><a href="#868">868</a></td></tr
-><tr id="gr_svn4_869"
-
-><td id="869"><a href="#869">869</a></td></tr
-><tr id="gr_svn4_870"
-
-><td id="870"><a href="#870">870</a></td></tr
-><tr id="gr_svn4_871"
-
-><td id="871"><a href="#871">871</a></td></tr
-><tr id="gr_svn4_872"
-
-><td id="872"><a href="#872">872</a></td></tr
-><tr id="gr_svn4_873"
-
-><td id="873"><a href="#873">873</a></td></tr
-><tr id="gr_svn4_874"
-
-><td id="874"><a href="#874">874</a></td></tr
-><tr id="gr_svn4_875"
-
-><td id="875"><a href="#875">875</a></td></tr
-><tr id="gr_svn4_876"
-
-><td id="876"><a href="#876">876</a></td></tr
-><tr id="gr_svn4_877"
-
-><td id="877"><a href="#877">877</a></td></tr
-><tr id="gr_svn4_878"
-
-><td id="878"><a href="#878">878</a></td></tr
-><tr id="gr_svn4_879"
-
-><td id="879"><a href="#879">879</a></td></tr
-><tr id="gr_svn4_880"
-
-><td id="880"><a href="#880">880</a></td></tr
-><tr id="gr_svn4_881"
-
-><td id="881"><a href="#881">881</a></td></tr
-><tr id="gr_svn4_882"
-
-><td id="882"><a href="#882">882</a></td></tr
-><tr id="gr_svn4_883"
-
-><td id="883"><a href="#883">883</a></td></tr
-><tr id="gr_svn4_884"
-
-><td id="884"><a href="#884">884</a></td></tr
-><tr id="gr_svn4_885"
-
-><td id="885"><a href="#885">885</a></td></tr
-><tr id="gr_svn4_886"
-
-><td id="886"><a href="#886">886</a></td></tr
-><tr id="gr_svn4_887"
-
-><td id="887"><a href="#887">887</a></td></tr
-><tr id="gr_svn4_888"
-
-><td id="888"><a href="#888">888</a></td></tr
-><tr id="gr_svn4_889"
-
-><td id="889"><a href="#889">889</a></td></tr
-><tr id="gr_svn4_890"
-
-><td id="890"><a href="#890">890</a></td></tr
-><tr id="gr_svn4_891"
-
-><td id="891"><a href="#891">891</a></td></tr
-><tr id="gr_svn4_892"
-
-><td id="892"><a href="#892">892</a></td></tr
-><tr id="gr_svn4_893"
-
-><td id="893"><a href="#893">893</a></td></tr
-><tr id="gr_svn4_894"
-
-><td id="894"><a href="#894">894</a></td></tr
-><tr id="gr_svn4_895"
-
-><td id="895"><a href="#895">895</a></td></tr
-><tr id="gr_svn4_896"
-
-><td id="896"><a href="#896">896</a></td></tr
-><tr id="gr_svn4_897"
-
-><td id="897"><a href="#897">897</a></td></tr
-><tr id="gr_svn4_898"
-
-><td id="898"><a href="#898">898</a></td></tr
-><tr id="gr_svn4_899"
-
-><td id="899"><a href="#899">899</a></td></tr
-><tr id="gr_svn4_900"
-
-><td id="900"><a href="#900">900</a></td></tr
-><tr id="gr_svn4_901"
-
-><td id="901"><a href="#901">901</a></td></tr
-><tr id="gr_svn4_902"
-
-><td id="902"><a href="#902">902</a></td></tr
-><tr id="gr_svn4_903"
-
-><td id="903"><a href="#903">903</a></td></tr
-><tr id="gr_svn4_904"
-
-><td id="904"><a href="#904">904</a></td></tr
-><tr id="gr_svn4_905"
-
-><td id="905"><a href="#905">905</a></td></tr
-><tr id="gr_svn4_906"
-
-><td id="906"><a href="#906">906</a></td></tr
-><tr id="gr_svn4_907"
-
-><td id="907"><a href="#907">907</a></td></tr
-><tr id="gr_svn4_908"
-
-><td id="908"><a href="#908">908</a></td></tr
-><tr id="gr_svn4_909"
-
-><td id="909"><a href="#909">909</a></td></tr
-><tr id="gr_svn4_910"
-
-><td id="910"><a href="#910">910</a></td></tr
-><tr id="gr_svn4_911"
-
-><td id="911"><a href="#911">911</a></td></tr
-><tr id="gr_svn4_912"
-
-><td id="912"><a href="#912">912</a></td></tr
-><tr id="gr_svn4_913"
-
-><td id="913"><a href="#913">913</a></td></tr
-><tr id="gr_svn4_914"
-
-><td id="914"><a href="#914">914</a></td></tr
-><tr id="gr_svn4_915"
-
-><td id="915"><a href="#915">915</a></td></tr
-><tr id="gr_svn4_916"
-
-><td id="916"><a href="#916">916</a></td></tr
-><tr id="gr_svn4_917"
-
-><td id="917"><a href="#917">917</a></td></tr
-><tr id="gr_svn4_918"
-
-><td id="918"><a href="#918">918</a></td></tr
-><tr id="gr_svn4_919"
-
-><td id="919"><a href="#919">919</a></td></tr
-><tr id="gr_svn4_920"
-
-><td id="920"><a href="#920">920</a></td></tr
-><tr id="gr_svn4_921"
-
-><td id="921"><a href="#921">921</a></td></tr
-><tr id="gr_svn4_922"
-
-><td id="922"><a href="#922">922</a></td></tr
-><tr id="gr_svn4_923"
-
-><td id="923"><a href="#923">923</a></td></tr
-><tr id="gr_svn4_924"
-
-><td id="924"><a href="#924">924</a></td></tr
-><tr id="gr_svn4_925"
-
-><td id="925"><a href="#925">925</a></td></tr
-><tr id="gr_svn4_926"
-
-><td id="926"><a href="#926">926</a></td></tr
-><tr id="gr_svn4_927"
-
-><td id="927"><a href="#927">927</a></td></tr
-><tr id="gr_svn4_928"
-
-><td id="928"><a href="#928">928</a></td></tr
-><tr id="gr_svn4_929"
-
-><td id="929"><a href="#929">929</a></td></tr
-><tr id="gr_svn4_930"
-
-><td id="930"><a href="#930">930</a></td></tr
-><tr id="gr_svn4_931"
-
-><td id="931"><a href="#931">931</a></td></tr
-><tr id="gr_svn4_932"
-
-><td id="932"><a href="#932">932</a></td></tr
-><tr id="gr_svn4_933"
-
-><td id="933"><a href="#933">933</a></td></tr
-><tr id="gr_svn4_934"
-
-><td id="934"><a href="#934">934</a></td></tr
-><tr id="gr_svn4_935"
-
-><td id="935"><a href="#935">935</a></td></tr
-><tr id="gr_svn4_936"
-
-><td id="936"><a href="#936">936</a></td></tr
-><tr id="gr_svn4_937"
-
-><td id="937"><a href="#937">937</a></td></tr
-><tr id="gr_svn4_938"
-
-><td id="938"><a href="#938">938</a></td></tr
-><tr id="gr_svn4_939"
-
-><td id="939"><a href="#939">939</a></td></tr
-><tr id="gr_svn4_940"
-
-><td id="940"><a href="#940">940</a></td></tr
-><tr id="gr_svn4_941"
-
-><td id="941"><a href="#941">941</a></td></tr
-><tr id="gr_svn4_942"
-
-><td id="942"><a href="#942">942</a></td></tr
-><tr id="gr_svn4_943"
-
-><td id="943"><a href="#943">943</a></td></tr
-><tr id="gr_svn4_944"
-
-><td id="944"><a href="#944">944</a></td></tr
-><tr id="gr_svn4_945"
-
-><td id="945"><a href="#945">945</a></td></tr
-><tr id="gr_svn4_946"
-
-><td id="946"><a href="#946">946</a></td></tr
-><tr id="gr_svn4_947"
-
-><td id="947"><a href="#947">947</a></td></tr
-><tr id="gr_svn4_948"
-
-><td id="948"><a href="#948">948</a></td></tr
-><tr id="gr_svn4_949"
-
-><td id="949"><a href="#949">949</a></td></tr
-><tr id="gr_svn4_950"
-
-><td id="950"><a href="#950">950</a></td></tr
-><tr id="gr_svn4_951"
-
-><td id="951"><a href="#951">951</a></td></tr
-><tr id="gr_svn4_952"
-
-><td id="952"><a href="#952">952</a></td></tr
-><tr id="gr_svn4_953"
-
-><td id="953"><a href="#953">953</a></td></tr
-><tr id="gr_svn4_954"
-
-><td id="954"><a href="#954">954</a></td></tr
-><tr id="gr_svn4_955"
-
-><td id="955"><a href="#955">955</a></td></tr
-><tr id="gr_svn4_956"
-
-><td id="956"><a href="#956">956</a></td></tr
-><tr id="gr_svn4_957"
-
-><td id="957"><a href="#957">957</a></td></tr
-><tr id="gr_svn4_958"
-
-><td id="958"><a href="#958">958</a></td></tr
-><tr id="gr_svn4_959"
-
-><td id="959"><a href="#959">959</a></td></tr
-><tr id="gr_svn4_960"
-
-><td id="960"><a href="#960">960</a></td></tr
-><tr id="gr_svn4_961"
-
-><td id="961"><a href="#961">961</a></td></tr
-><tr id="gr_svn4_962"
-
-><td id="962"><a href="#962">962</a></td></tr
-><tr id="gr_svn4_963"
-
-><td id="963"><a href="#963">963</a></td></tr
-><tr id="gr_svn4_964"
-
-><td id="964"><a href="#964">964</a></td></tr
-><tr id="gr_svn4_965"
-
-><td id="965"><a href="#965">965</a></td></tr
-><tr id="gr_svn4_966"
-
-><td id="966"><a href="#966">966</a></td></tr
-><tr id="gr_svn4_967"
-
-><td id="967"><a href="#967">967</a></td></tr
-><tr id="gr_svn4_968"
-
-><td id="968"><a href="#968">968</a></td></tr
-><tr id="gr_svn4_969"
-
-><td id="969"><a href="#969">969</a></td></tr
-><tr id="gr_svn4_970"
-
-><td id="970"><a href="#970">970</a></td></tr
-><tr id="gr_svn4_971"
-
-><td id="971"><a href="#971">971</a></td></tr
-><tr id="gr_svn4_972"
-
-><td id="972"><a href="#972">972</a></td></tr
-><tr id="gr_svn4_973"
-
-><td id="973"><a href="#973">973</a></td></tr
-><tr id="gr_svn4_974"
-
-><td id="974"><a href="#974">974</a></td></tr
-><tr id="gr_svn4_975"
-
-><td id="975"><a href="#975">975</a></td></tr
-><tr id="gr_svn4_976"
-
-><td id="976"><a href="#976">976</a></td></tr
-><tr id="gr_svn4_977"
-
-><td id="977"><a href="#977">977</a></td></tr
-><tr id="gr_svn4_978"
-
-><td id="978"><a href="#978">978</a></td></tr
-><tr id="gr_svn4_979"
-
-><td id="979"><a href="#979">979</a></td></tr
-><tr id="gr_svn4_980"
-
-><td id="980"><a href="#980">980</a></td></tr
-><tr id="gr_svn4_981"
-
-><td id="981"><a href="#981">981</a></td></tr
-><tr id="gr_svn4_982"
-
-><td id="982"><a href="#982">982</a></td></tr
-><tr id="gr_svn4_983"
-
-><td id="983"><a href="#983">983</a></td></tr
-><tr id="gr_svn4_984"
-
-><td id="984"><a href="#984">984</a></td></tr
-><tr id="gr_svn4_985"
-
-><td id="985"><a href="#985">985</a></td></tr
-><tr id="gr_svn4_986"
-
-><td id="986"><a href="#986">986</a></td></tr
-><tr id="gr_svn4_987"
-
-><td id="987"><a href="#987">987</a></td></tr
-><tr id="gr_svn4_988"
-
-><td id="988"><a href="#988">988</a></td></tr
-><tr id="gr_svn4_989"
-
-><td id="989"><a href="#989">989</a></td></tr
-><tr id="gr_svn4_990"
-
-><td id="990"><a href="#990">990</a></td></tr
-><tr id="gr_svn4_991"
-
-><td id="991"><a href="#991">991</a></td></tr
-><tr id="gr_svn4_992"
-
-><td id="992"><a href="#992">992</a></td></tr
-><tr id="gr_svn4_993"
-
-><td id="993"><a href="#993">993</a></td></tr
-><tr id="gr_svn4_994"
-
-><td id="994"><a href="#994">994</a></td></tr
-><tr id="gr_svn4_995"
-
-><td id="995"><a href="#995">995</a></td></tr
-><tr id="gr_svn4_996"
-
-><td id="996"><a href="#996">996</a></td></tr
-><tr id="gr_svn4_997"
-
-><td id="997"><a href="#997">997</a></td></tr
-><tr id="gr_svn4_998"
-
-><td id="998"><a href="#998">998</a></td></tr
-><tr id="gr_svn4_999"
-
-><td id="999"><a href="#999">999</a></td></tr
-><tr id="gr_svn4_1000"
-
-><td id="1000"><a href="#1000">1000</a></td></tr
-><tr id="gr_svn4_1001"
-
-><td id="1001"><a href="#1001">1001</a></td></tr
-><tr id="gr_svn4_1002"
-
-><td id="1002"><a href="#1002">1002</a></td></tr
-><tr id="gr_svn4_1003"
-
-><td id="1003"><a href="#1003">1003</a></td></tr
-><tr id="gr_svn4_1004"
-
-><td id="1004"><a href="#1004">1004</a></td></tr
-><tr id="gr_svn4_1005"
-
-><td id="1005"><a href="#1005">1005</a></td></tr
-><tr id="gr_svn4_1006"
-
-><td id="1006"><a href="#1006">1006</a></td></tr
-><tr id="gr_svn4_1007"
-
-><td id="1007"><a href="#1007">1007</a></td></tr
-><tr id="gr_svn4_1008"
-
-><td id="1008"><a href="#1008">1008</a></td></tr
-><tr id="gr_svn4_1009"
-
-><td id="1009"><a href="#1009">1009</a></td></tr
-><tr id="gr_svn4_1010"
-
-><td id="1010"><a href="#1010">1010</a></td></tr
-><tr id="gr_svn4_1011"
-
-><td id="1011"><a href="#1011">1011</a></td></tr
-><tr id="gr_svn4_1012"
-
-><td id="1012"><a href="#1012">1012</a></td></tr
-><tr id="gr_svn4_1013"
-
-><td id="1013"><a href="#1013">1013</a></td></tr
-><tr id="gr_svn4_1014"
-
-><td id="1014"><a href="#1014">1014</a></td></tr
-><tr id="gr_svn4_1015"
-
-><td id="1015"><a href="#1015">1015</a></td></tr
-><tr id="gr_svn4_1016"
-
-><td id="1016"><a href="#1016">1016</a></td></tr
-><tr id="gr_svn4_1017"
-
-><td id="1017"><a href="#1017">1017</a></td></tr
-><tr id="gr_svn4_1018"
-
-><td id="1018"><a href="#1018">1018</a></td></tr
-><tr id="gr_svn4_1019"
-
-><td id="1019"><a href="#1019">1019</a></td></tr
-><tr id="gr_svn4_1020"
-
-><td id="1020"><a href="#1020">1020</a></td></tr
-><tr id="gr_svn4_1021"
-
-><td id="1021"><a href="#1021">1021</a></td></tr
-><tr id="gr_svn4_1022"
-
-><td id="1022"><a href="#1022">1022</a></td></tr
-><tr id="gr_svn4_1023"
-
-><td id="1023"><a href="#1023">1023</a></td></tr
-><tr id="gr_svn4_1024"
-
-><td id="1024"><a href="#1024">1024</a></td></tr
-><tr id="gr_svn4_1025"
-
-><td id="1025"><a href="#1025">1025</a></td></tr
-><tr id="gr_svn4_1026"
-
-><td id="1026"><a href="#1026">1026</a></td></tr
-><tr id="gr_svn4_1027"
-
-><td id="1027"><a href="#1027">1027</a></td></tr
-><tr id="gr_svn4_1028"
-
-><td id="1028"><a href="#1028">1028</a></td></tr
-><tr id="gr_svn4_1029"
-
-><td id="1029"><a href="#1029">1029</a></td></tr
-><tr id="gr_svn4_1030"
-
-><td id="1030"><a href="#1030">1030</a></td></tr
-><tr id="gr_svn4_1031"
-
-><td id="1031"><a href="#1031">1031</a></td></tr
-><tr id="gr_svn4_1032"
-
-><td id="1032"><a href="#1032">1032</a></td></tr
-><tr id="gr_svn4_1033"
-
-><td id="1033"><a href="#1033">1033</a></td></tr
-><tr id="gr_svn4_1034"
-
-><td id="1034"><a href="#1034">1034</a></td></tr
-><tr id="gr_svn4_1035"
-
-><td id="1035"><a href="#1035">1035</a></td></tr
-><tr id="gr_svn4_1036"
-
-><td id="1036"><a href="#1036">1036</a></td></tr
-><tr id="gr_svn4_1037"
-
-><td id="1037"><a href="#1037">1037</a></td></tr
-><tr id="gr_svn4_1038"
-
-><td id="1038"><a href="#1038">1038</a></td></tr
-><tr id="gr_svn4_1039"
-
-><td id="1039"><a href="#1039">1039</a></td></tr
-><tr id="gr_svn4_1040"
-
-><td id="1040"><a href="#1040">1040</a></td></tr
-><tr id="gr_svn4_1041"
-
-><td id="1041"><a href="#1041">1041</a></td></tr
-><tr id="gr_svn4_1042"
-
-><td id="1042"><a href="#1042">1042</a></td></tr
-><tr id="gr_svn4_1043"
-
-><td id="1043"><a href="#1043">1043</a></td></tr
-><tr id="gr_svn4_1044"
-
-><td id="1044"><a href="#1044">1044</a></td></tr
-><tr id="gr_svn4_1045"
-
-><td id="1045"><a href="#1045">1045</a></td></tr
-><tr id="gr_svn4_1046"
-
-><td id="1046"><a href="#1046">1046</a></td></tr
-><tr id="gr_svn4_1047"
-
-><td id="1047"><a href="#1047">1047</a></td></tr
-><tr id="gr_svn4_1048"
-
-><td id="1048"><a href="#1048">1048</a></td></tr
-><tr id="gr_svn4_1049"
-
-><td id="1049"><a href="#1049">1049</a></td></tr
-><tr id="gr_svn4_1050"
-
-><td id="1050"><a href="#1050">1050</a></td></tr
-><tr id="gr_svn4_1051"
-
-><td id="1051"><a href="#1051">1051</a></td></tr
-><tr id="gr_svn4_1052"
-
-><td id="1052"><a href="#1052">1052</a></td></tr
-><tr id="gr_svn4_1053"
-
-><td id="1053"><a href="#1053">1053</a></td></tr
-><tr id="gr_svn4_1054"
-
-><td id="1054"><a href="#1054">1054</a></td></tr
-><tr id="gr_svn4_1055"
-
-><td id="1055"><a href="#1055">1055</a></td></tr
-><tr id="gr_svn4_1056"
-
-><td id="1056"><a href="#1056">1056</a></td></tr
-><tr id="gr_svn4_1057"
-
-><td id="1057"><a href="#1057">1057</a></td></tr
-><tr id="gr_svn4_1058"
-
-><td id="1058"><a href="#1058">1058</a></td></tr
-><tr id="gr_svn4_1059"
-
-><td id="1059"><a href="#1059">1059</a></td></tr
-><tr id="gr_svn4_1060"
-
-><td id="1060"><a href="#1060">1060</a></td></tr
-><tr id="gr_svn4_1061"
-
-><td id="1061"><a href="#1061">1061</a></td></tr
-><tr id="gr_svn4_1062"
-
-><td id="1062"><a href="#1062">1062</a></td></tr
-><tr id="gr_svn4_1063"
-
-><td id="1063"><a href="#1063">1063</a></td></tr
-><tr id="gr_svn4_1064"
-
-><td id="1064"><a href="#1064">1064</a></td></tr
-><tr id="gr_svn4_1065"
-
-><td id="1065"><a href="#1065">1065</a></td></tr
-><tr id="gr_svn4_1066"
-
-><td id="1066"><a href="#1066">1066</a></td></tr
-><tr id="gr_svn4_1067"
-
-><td id="1067"><a href="#1067">1067</a></td></tr
-><tr id="gr_svn4_1068"
-
-><td id="1068"><a href="#1068">1068</a></td></tr
-><tr id="gr_svn4_1069"
-
-><td id="1069"><a href="#1069">1069</a></td></tr
-><tr id="gr_svn4_1070"
-
-><td id="1070"><a href="#1070">1070</a></td></tr
-><tr id="gr_svn4_1071"
-
-><td id="1071"><a href="#1071">1071</a></td></tr
-><tr id="gr_svn4_1072"
-
-><td id="1072"><a href="#1072">1072</a></td></tr
-><tr id="gr_svn4_1073"
-
-><td id="1073"><a href="#1073">1073</a></td></tr
-><tr id="gr_svn4_1074"
-
-><td id="1074"><a href="#1074">1074</a></td></tr
-><tr id="gr_svn4_1075"
-
-><td id="1075"><a href="#1075">1075</a></td></tr
-><tr id="gr_svn4_1076"
-
-><td id="1076"><a href="#1076">1076</a></td></tr
-><tr id="gr_svn4_1077"
-
-><td id="1077"><a href="#1077">1077</a></td></tr
-><tr id="gr_svn4_1078"
-
-><td id="1078"><a href="#1078">1078</a></td></tr
-><tr id="gr_svn4_1079"
-
-><td id="1079"><a href="#1079">1079</a></td></tr
-><tr id="gr_svn4_1080"
-
-><td id="1080"><a href="#1080">1080</a></td></tr
-><tr id="gr_svn4_1081"
-
-><td id="1081"><a href="#1081">1081</a></td></tr
-><tr id="gr_svn4_1082"
-
-><td id="1082"><a href="#1082">1082</a></td></tr
-><tr id="gr_svn4_1083"
-
-><td id="1083"><a href="#1083">1083</a></td></tr
-><tr id="gr_svn4_1084"
-
-><td id="1084"><a href="#1084">1084</a></td></tr
-><tr id="gr_svn4_1085"
-
-><td id="1085"><a href="#1085">1085</a></td></tr
-><tr id="gr_svn4_1086"
-
-><td id="1086"><a href="#1086">1086</a></td></tr
-><tr id="gr_svn4_1087"
-
-><td id="1087"><a href="#1087">1087</a></td></tr
-><tr id="gr_svn4_1088"
-
-><td id="1088"><a href="#1088">1088</a></td></tr
-><tr id="gr_svn4_1089"
-
-><td id="1089"><a href="#1089">1089</a></td></tr
-><tr id="gr_svn4_1090"
-
-><td id="1090"><a href="#1090">1090</a></td></tr
-><tr id="gr_svn4_1091"
-
-><td id="1091"><a href="#1091">1091</a></td></tr
-><tr id="gr_svn4_1092"
-
-><td id="1092"><a href="#1092">1092</a></td></tr
-><tr id="gr_svn4_1093"
-
-><td id="1093"><a href="#1093">1093</a></td></tr
-><tr id="gr_svn4_1094"
-
-><td id="1094"><a href="#1094">1094</a></td></tr
-><tr id="gr_svn4_1095"
-
-><td id="1095"><a href="#1095">1095</a></td></tr
-><tr id="gr_svn4_1096"
-
-><td id="1096"><a href="#1096">1096</a></td></tr
-><tr id="gr_svn4_1097"
-
-><td id="1097"><a href="#1097">1097</a></td></tr
-><tr id="gr_svn4_1098"
-
-><td id="1098"><a href="#1098">1098</a></td></tr
-><tr id="gr_svn4_1099"
-
-><td id="1099"><a href="#1099">1099</a></td></tr
-><tr id="gr_svn4_1100"
-
-><td id="1100"><a href="#1100">1100</a></td></tr
-><tr id="gr_svn4_1101"
-
-><td id="1101"><a href="#1101">1101</a></td></tr
-><tr id="gr_svn4_1102"
-
-><td id="1102"><a href="#1102">1102</a></td></tr
-><tr id="gr_svn4_1103"
-
-><td id="1103"><a href="#1103">1103</a></td></tr
-><tr id="gr_svn4_1104"
-
-><td id="1104"><a href="#1104">1104</a></td></tr
-><tr id="gr_svn4_1105"
-
-><td id="1105"><a href="#1105">1105</a></td></tr
-><tr id="gr_svn4_1106"
-
-><td id="1106"><a href="#1106">1106</a></td></tr
-><tr id="gr_svn4_1107"
-
-><td id="1107"><a href="#1107">1107</a></td></tr
-><tr id="gr_svn4_1108"
-
-><td id="1108"><a href="#1108">1108</a></td></tr
-><tr id="gr_svn4_1109"
-
-><td id="1109"><a href="#1109">1109</a></td></tr
-><tr id="gr_svn4_1110"
-
-><td id="1110"><a href="#1110">1110</a></td></tr
-><tr id="gr_svn4_1111"
-
-><td id="1111"><a href="#1111">1111</a></td></tr
-><tr id="gr_svn4_1112"
-
-><td id="1112"><a href="#1112">1112</a></td></tr
-><tr id="gr_svn4_1113"
-
-><td id="1113"><a href="#1113">1113</a></td></tr
-><tr id="gr_svn4_1114"
-
-><td id="1114"><a href="#1114">1114</a></td></tr
-><tr id="gr_svn4_1115"
-
-><td id="1115"><a href="#1115">1115</a></td></tr
-><tr id="gr_svn4_1116"
-
-><td id="1116"><a href="#1116">1116</a></td></tr
-><tr id="gr_svn4_1117"
-
-><td id="1117"><a href="#1117">1117</a></td></tr
-><tr id="gr_svn4_1118"
-
-><td id="1118"><a href="#1118">1118</a></td></tr
-><tr id="gr_svn4_1119"
-
-><td id="1119"><a href="#1119">1119</a></td></tr
-><tr id="gr_svn4_1120"
-
-><td id="1120"><a href="#1120">1120</a></td></tr
-><tr id="gr_svn4_1121"
-
-><td id="1121"><a href="#1121">1121</a></td></tr
-><tr id="gr_svn4_1122"
-
-><td id="1122"><a href="#1122">1122</a></td></tr
-><tr id="gr_svn4_1123"
-
-><td id="1123"><a href="#1123">1123</a></td></tr
-><tr id="gr_svn4_1124"
-
-><td id="1124"><a href="#1124">1124</a></td></tr
-><tr id="gr_svn4_1125"
-
-><td id="1125"><a href="#1125">1125</a></td></tr
-><tr id="gr_svn4_1126"
-
-><td id="1126"><a href="#1126">1126</a></td></tr
-><tr id="gr_svn4_1127"
-
-><td id="1127"><a href="#1127">1127</a></td></tr
-><tr id="gr_svn4_1128"
-
-><td id="1128"><a href="#1128">1128</a></td></tr
-><tr id="gr_svn4_1129"
-
-><td id="1129"><a href="#1129">1129</a></td></tr
-><tr id="gr_svn4_1130"
-
-><td id="1130"><a href="#1130">1130</a></td></tr
-><tr id="gr_svn4_1131"
-
-><td id="1131"><a href="#1131">1131</a></td></tr
-><tr id="gr_svn4_1132"
-
-><td id="1132"><a href="#1132">1132</a></td></tr
-><tr id="gr_svn4_1133"
-
-><td id="1133"><a href="#1133">1133</a></td></tr
-><tr id="gr_svn4_1134"
-
-><td id="1134"><a href="#1134">1134</a></td></tr
-><tr id="gr_svn4_1135"
-
-><td id="1135"><a href="#1135">1135</a></td></tr
-><tr id="gr_svn4_1136"
-
-><td id="1136"><a href="#1136">1136</a></td></tr
-><tr id="gr_svn4_1137"
-
-><td id="1137"><a href="#1137">1137</a></td></tr
-><tr id="gr_svn4_1138"
-
-><td id="1138"><a href="#1138">1138</a></td></tr
-><tr id="gr_svn4_1139"
-
-><td id="1139"><a href="#1139">1139</a></td></tr
-><tr id="gr_svn4_1140"
-
-><td id="1140"><a href="#1140">1140</a></td></tr
-><tr id="gr_svn4_1141"
-
-><td id="1141"><a href="#1141">1141</a></td></tr
-><tr id="gr_svn4_1142"
-
-><td id="1142"><a href="#1142">1142</a></td></tr
-><tr id="gr_svn4_1143"
-
-><td id="1143"><a href="#1143">1143</a></td></tr
-><tr id="gr_svn4_1144"
-
-><td id="1144"><a href="#1144">1144</a></td></tr
-><tr id="gr_svn4_1145"
-
-><td id="1145"><a href="#1145">1145</a></td></tr
-><tr id="gr_svn4_1146"
-
-><td id="1146"><a href="#1146">1146</a></td></tr
-><tr id="gr_svn4_1147"
-
-><td id="1147"><a href="#1147">1147</a></td></tr
-><tr id="gr_svn4_1148"
-
-><td id="1148"><a href="#1148">1148</a></td></tr
-><tr id="gr_svn4_1149"
-
-><td id="1149"><a href="#1149">1149</a></td></tr
-><tr id="gr_svn4_1150"
-
-><td id="1150"><a href="#1150">1150</a></td></tr
-><tr id="gr_svn4_1151"
-
-><td id="1151"><a href="#1151">1151</a></td></tr
-><tr id="gr_svn4_1152"
-
-><td id="1152"><a href="#1152">1152</a></td></tr
-><tr id="gr_svn4_1153"
-
-><td id="1153"><a href="#1153">1153</a></td></tr
-><tr id="gr_svn4_1154"
-
-><td id="1154"><a href="#1154">1154</a></td></tr
-><tr id="gr_svn4_1155"
-
-><td id="1155"><a href="#1155">1155</a></td></tr
-><tr id="gr_svn4_1156"
-
-><td id="1156"><a href="#1156">1156</a></td></tr
-><tr id="gr_svn4_1157"
-
-><td id="1157"><a href="#1157">1157</a></td></tr
-><tr id="gr_svn4_1158"
-
-><td id="1158"><a href="#1158">1158</a></td></tr
-><tr id="gr_svn4_1159"
-
-><td id="1159"><a href="#1159">1159</a></td></tr
-><tr id="gr_svn4_1160"
-
-><td id="1160"><a href="#1160">1160</a></td></tr
-><tr id="gr_svn4_1161"
-
-><td id="1161"><a href="#1161">1161</a></td></tr
-><tr id="gr_svn4_1162"
-
-><td id="1162"><a href="#1162">1162</a></td></tr
-><tr id="gr_svn4_1163"
-
-><td id="1163"><a href="#1163">1163</a></td></tr
-><tr id="gr_svn4_1164"
-
-><td id="1164"><a href="#1164">1164</a></td></tr
-><tr id="gr_svn4_1165"
-
-><td id="1165"><a href="#1165">1165</a></td></tr
-><tr id="gr_svn4_1166"
-
-><td id="1166"><a href="#1166">1166</a></td></tr
-><tr id="gr_svn4_1167"
-
-><td id="1167"><a href="#1167">1167</a></td></tr
-><tr id="gr_svn4_1168"
-
-><td id="1168"><a href="#1168">1168</a></td></tr
-><tr id="gr_svn4_1169"
-
-><td id="1169"><a href="#1169">1169</a></td></tr
-><tr id="gr_svn4_1170"
-
-><td id="1170"><a href="#1170">1170</a></td></tr
-><tr id="gr_svn4_1171"
-
-><td id="1171"><a href="#1171">1171</a></td></tr
-><tr id="gr_svn4_1172"
-
-><td id="1172"><a href="#1172">1172</a></td></tr
-><tr id="gr_svn4_1173"
-
-><td id="1173"><a href="#1173">1173</a></td></tr
-><tr id="gr_svn4_1174"
-
-><td id="1174"><a href="#1174">1174</a></td></tr
-><tr id="gr_svn4_1175"
-
-><td id="1175"><a href="#1175">1175</a></td></tr
-><tr id="gr_svn4_1176"
-
-><td id="1176"><a href="#1176">1176</a></td></tr
-><tr id="gr_svn4_1177"
-
-><td id="1177"><a href="#1177">1177</a></td></tr
-><tr id="gr_svn4_1178"
-
-><td id="1178"><a href="#1178">1178</a></td></tr
-><tr id="gr_svn4_1179"
-
-><td id="1179"><a href="#1179">1179</a></td></tr
-><tr id="gr_svn4_1180"
-
-><td id="1180"><a href="#1180">1180</a></td></tr
-><tr id="gr_svn4_1181"
-
-><td id="1181"><a href="#1181">1181</a></td></tr
-><tr id="gr_svn4_1182"
-
-><td id="1182"><a href="#1182">1182</a></td></tr
-><tr id="gr_svn4_1183"
-
-><td id="1183"><a href="#1183">1183</a></td></tr
-><tr id="gr_svn4_1184"
-
-><td id="1184"><a href="#1184">1184</a></td></tr
-><tr id="gr_svn4_1185"
-
-><td id="1185"><a href="#1185">1185</a></td></tr
-><tr id="gr_svn4_1186"
-
-><td id="1186"><a href="#1186">1186</a></td></tr
-><tr id="gr_svn4_1187"
-
-><td id="1187"><a href="#1187">1187</a></td></tr
-><tr id="gr_svn4_1188"
-
-><td id="1188"><a href="#1188">1188</a></td></tr
-><tr id="gr_svn4_1189"
-
-><td id="1189"><a href="#1189">1189</a></td></tr
-><tr id="gr_svn4_1190"
-
-><td id="1190"><a href="#1190">1190</a></td></tr
-><tr id="gr_svn4_1191"
-
-><td id="1191"><a href="#1191">1191</a></td></tr
-><tr id="gr_svn4_1192"
-
-><td id="1192"><a href="#1192">1192</a></td></tr
-><tr id="gr_svn4_1193"
-
-><td id="1193"><a href="#1193">1193</a></td></tr
-><tr id="gr_svn4_1194"
-
-><td id="1194"><a href="#1194">1194</a></td></tr
-><tr id="gr_svn4_1195"
-
-><td id="1195"><a href="#1195">1195</a></td></tr
-><tr id="gr_svn4_1196"
-
-><td id="1196"><a href="#1196">1196</a></td></tr
-><tr id="gr_svn4_1197"
-
-><td id="1197"><a href="#1197">1197</a></td></tr
-><tr id="gr_svn4_1198"
-
-><td id="1198"><a href="#1198">1198</a></td></tr
-><tr id="gr_svn4_1199"
-
-><td id="1199"><a href="#1199">1199</a></td></tr
-><tr id="gr_svn4_1200"
-
-><td id="1200"><a href="#1200">1200</a></td></tr
-><tr id="gr_svn4_1201"
-
-><td id="1201"><a href="#1201">1201</a></td></tr
-><tr id="gr_svn4_1202"
-
-><td id="1202"><a href="#1202">1202</a></td></tr
-><tr id="gr_svn4_1203"
-
-><td id="1203"><a href="#1203">1203</a></td></tr
-><tr id="gr_svn4_1204"
-
-><td id="1204"><a href="#1204">1204</a></td></tr
-><tr id="gr_svn4_1205"
-
-><td id="1205"><a href="#1205">1205</a></td></tr
-><tr id="gr_svn4_1206"
-
-><td id="1206"><a href="#1206">1206</a></td></tr
-><tr id="gr_svn4_1207"
-
-><td id="1207"><a href="#1207">1207</a></td></tr
-><tr id="gr_svn4_1208"
-
-><td id="1208"><a href="#1208">1208</a></td></tr
-><tr id="gr_svn4_1209"
-
-><td id="1209"><a href="#1209">1209</a></td></tr
-><tr id="gr_svn4_1210"
-
-><td id="1210"><a href="#1210">1210</a></td></tr
-><tr id="gr_svn4_1211"
-
-><td id="1211"><a href="#1211">1211</a></td></tr
-><tr id="gr_svn4_1212"
-
-><td id="1212"><a href="#1212">1212</a></td></tr
-><tr id="gr_svn4_1213"
-
-><td id="1213"><a href="#1213">1213</a></td></tr
-><tr id="gr_svn4_1214"
-
-><td id="1214"><a href="#1214">1214</a></td></tr
-><tr id="gr_svn4_1215"
-
-><td id="1215"><a href="#1215">1215</a></td></tr
-><tr id="gr_svn4_1216"
-
-><td id="1216"><a href="#1216">1216</a></td></tr
-><tr id="gr_svn4_1217"
-
-><td id="1217"><a href="#1217">1217</a></td></tr
-><tr id="gr_svn4_1218"
-
-><td id="1218"><a href="#1218">1218</a></td></tr
-><tr id="gr_svn4_1219"
-
-><td id="1219"><a href="#1219">1219</a></td></tr
-><tr id="gr_svn4_1220"
-
-><td id="1220"><a href="#1220">1220</a></td></tr
-><tr id="gr_svn4_1221"
-
-><td id="1221"><a href="#1221">1221</a></td></tr
-><tr id="gr_svn4_1222"
-
-><td id="1222"><a href="#1222">1222</a></td></tr
-><tr id="gr_svn4_1223"
-
-><td id="1223"><a href="#1223">1223</a></td></tr
-><tr id="gr_svn4_1224"
-
-><td id="1224"><a href="#1224">1224</a></td></tr
-><tr id="gr_svn4_1225"
-
-><td id="1225"><a href="#1225">1225</a></td></tr
-><tr id="gr_svn4_1226"
-
-><td id="1226"><a href="#1226">1226</a></td></tr
-><tr id="gr_svn4_1227"
-
-><td id="1227"><a href="#1227">1227</a></td></tr
-><tr id="gr_svn4_1228"
-
-><td id="1228"><a href="#1228">1228</a></td></tr
-><tr id="gr_svn4_1229"
-
-><td id="1229"><a href="#1229">1229</a></td></tr
-><tr id="gr_svn4_1230"
-
-><td id="1230"><a href="#1230">1230</a></td></tr
-><tr id="gr_svn4_1231"
-
-><td id="1231"><a href="#1231">1231</a></td></tr
-><tr id="gr_svn4_1232"
-
-><td id="1232"><a href="#1232">1232</a></td></tr
-><tr id="gr_svn4_1233"
-
-><td id="1233"><a href="#1233">1233</a></td></tr
-><tr id="gr_svn4_1234"
-
-><td id="1234"><a href="#1234">1234</a></td></tr
-><tr id="gr_svn4_1235"
-
-><td id="1235"><a href="#1235">1235</a></td></tr
-><tr id="gr_svn4_1236"
-
-><td id="1236"><a href="#1236">1236</a></td></tr
-><tr id="gr_svn4_1237"
-
-><td id="1237"><a href="#1237">1237</a></td></tr
-><tr id="gr_svn4_1238"
-
-><td id="1238"><a href="#1238">1238</a></td></tr
-><tr id="gr_svn4_1239"
-
-><td id="1239"><a href="#1239">1239</a></td></tr
-><tr id="gr_svn4_1240"
-
-><td id="1240"><a href="#1240">1240</a></td></tr
-><tr id="gr_svn4_1241"
-
-><td id="1241"><a href="#1241">1241</a></td></tr
-><tr id="gr_svn4_1242"
-
-><td id="1242"><a href="#1242">1242</a></td></tr
-><tr id="gr_svn4_1243"
-
-><td id="1243"><a href="#1243">1243</a></td></tr
-><tr id="gr_svn4_1244"
-
-><td id="1244"><a href="#1244">1244</a></td></tr
-><tr id="gr_svn4_1245"
-
-><td id="1245"><a href="#1245">1245</a></td></tr
-><tr id="gr_svn4_1246"
-
-><td id="1246"><a href="#1246">1246</a></td></tr
-><tr id="gr_svn4_1247"
-
-><td id="1247"><a href="#1247">1247</a></td></tr
-><tr id="gr_svn4_1248"
-
-><td id="1248"><a href="#1248">1248</a></td></tr
-><tr id="gr_svn4_1249"
-
-><td id="1249"><a href="#1249">1249</a></td></tr
-><tr id="gr_svn4_1250"
-
-><td id="1250"><a href="#1250">1250</a></td></tr
-><tr id="gr_svn4_1251"
-
-><td id="1251"><a href="#1251">1251</a></td></tr
-><tr id="gr_svn4_1252"
-
-><td id="1252"><a href="#1252">1252</a></td></tr
-><tr id="gr_svn4_1253"
-
-><td id="1253"><a href="#1253">1253</a></td></tr
-><tr id="gr_svn4_1254"
-
-><td id="1254"><a href="#1254">1254</a></td></tr
-><tr id="gr_svn4_1255"
-
-><td id="1255"><a href="#1255">1255</a></td></tr
-><tr id="gr_svn4_1256"
-
-><td id="1256"><a href="#1256">1256</a></td></tr
-><tr id="gr_svn4_1257"
-
-><td id="1257"><a href="#1257">1257</a></td></tr
-><tr id="gr_svn4_1258"
-
-><td id="1258"><a href="#1258">1258</a></td></tr
-><tr id="gr_svn4_1259"
-
-><td id="1259"><a href="#1259">1259</a></td></tr
-><tr id="gr_svn4_1260"
-
-><td id="1260"><a href="#1260">1260</a></td></tr
-><tr id="gr_svn4_1261"
-
-><td id="1261"><a href="#1261">1261</a></td></tr
-><tr id="gr_svn4_1262"
-
-><td id="1262"><a href="#1262">1262</a></td></tr
-><tr id="gr_svn4_1263"
-
-><td id="1263"><a href="#1263">1263</a></td></tr
-><tr id="gr_svn4_1264"
-
-><td id="1264"><a href="#1264">1264</a></td></tr
-><tr id="gr_svn4_1265"
-
-><td id="1265"><a href="#1265">1265</a></td></tr
-><tr id="gr_svn4_1266"
-
-><td id="1266"><a href="#1266">1266</a></td></tr
-><tr id="gr_svn4_1267"
-
-><td id="1267"><a href="#1267">1267</a></td></tr
-><tr id="gr_svn4_1268"
-
-><td id="1268"><a href="#1268">1268</a></td></tr
-><tr id="gr_svn4_1269"
-
-><td id="1269"><a href="#1269">1269</a></td></tr
-><tr id="gr_svn4_1270"
-
-><td id="1270"><a href="#1270">1270</a></td></tr
-><tr id="gr_svn4_1271"
-
-><td id="1271"><a href="#1271">1271</a></td></tr
-><tr id="gr_svn4_1272"
-
-><td id="1272"><a href="#1272">1272</a></td></tr
-><tr id="gr_svn4_1273"
-
-><td id="1273"><a href="#1273">1273</a></td></tr
-><tr id="gr_svn4_1274"
-
-><td id="1274"><a href="#1274">1274</a></td></tr
-><tr id="gr_svn4_1275"
-
-><td id="1275"><a href="#1275">1275</a></td></tr
-><tr id="gr_svn4_1276"
-
-><td id="1276"><a href="#1276">1276</a></td></tr
-><tr id="gr_svn4_1277"
-
-><td id="1277"><a href="#1277">1277</a></td></tr
-><tr id="gr_svn4_1278"
-
-><td id="1278"><a href="#1278">1278</a></td></tr
-><tr id="gr_svn4_1279"
-
-><td id="1279"><a href="#1279">1279</a></td></tr
-><tr id="gr_svn4_1280"
-
-><td id="1280"><a href="#1280">1280</a></td></tr
-><tr id="gr_svn4_1281"
-
-><td id="1281"><a href="#1281">1281</a></td></tr
-><tr id="gr_svn4_1282"
-
-><td id="1282"><a href="#1282">1282</a></td></tr
-><tr id="gr_svn4_1283"
-
-><td id="1283"><a href="#1283">1283</a></td></tr
-><tr id="gr_svn4_1284"
-
-><td id="1284"><a href="#1284">1284</a></td></tr
-><tr id="gr_svn4_1285"
-
-><td id="1285"><a href="#1285">1285</a></td></tr
-><tr id="gr_svn4_1286"
-
-><td id="1286"><a href="#1286">1286</a></td></tr
-><tr id="gr_svn4_1287"
-
-><td id="1287"><a href="#1287">1287</a></td></tr
-><tr id="gr_svn4_1288"
-
-><td id="1288"><a href="#1288">1288</a></td></tr
-><tr id="gr_svn4_1289"
-
-><td id="1289"><a href="#1289">1289</a></td></tr
-><tr id="gr_svn4_1290"
-
-><td id="1290"><a href="#1290">1290</a></td></tr
-><tr id="gr_svn4_1291"
-
-><td id="1291"><a href="#1291">1291</a></td></tr
-><tr id="gr_svn4_1292"
-
-><td id="1292"><a href="#1292">1292</a></td></tr
-><tr id="gr_svn4_1293"
-
-><td id="1293"><a href="#1293">1293</a></td></tr
-><tr id="gr_svn4_1294"
-
-><td id="1294"><a href="#1294">1294</a></td></tr
-><tr id="gr_svn4_1295"
-
-><td id="1295"><a href="#1295">1295</a></td></tr
-><tr id="gr_svn4_1296"
-
-><td id="1296"><a href="#1296">1296</a></td></tr
-><tr id="gr_svn4_1297"
-
-><td id="1297"><a href="#1297">1297</a></td></tr
-><tr id="gr_svn4_1298"
-
-><td id="1298"><a href="#1298">1298</a></td></tr
-><tr id="gr_svn4_1299"
-
-><td id="1299"><a href="#1299">1299</a></td></tr
-><tr id="gr_svn4_1300"
-
-><td id="1300"><a href="#1300">1300</a></td></tr
-><tr id="gr_svn4_1301"
-
-><td id="1301"><a href="#1301">1301</a></td></tr
-><tr id="gr_svn4_1302"
-
-><td id="1302"><a href="#1302">1302</a></td></tr
-><tr id="gr_svn4_1303"
-
-><td id="1303"><a href="#1303">1303</a></td></tr
-><tr id="gr_svn4_1304"
-
-><td id="1304"><a href="#1304">1304</a></td></tr
-><tr id="gr_svn4_1305"
-
-><td id="1305"><a href="#1305">1305</a></td></tr
-><tr id="gr_svn4_1306"
-
-><td id="1306"><a href="#1306">1306</a></td></tr
-><tr id="gr_svn4_1307"
-
-><td id="1307"><a href="#1307">1307</a></td></tr
-><tr id="gr_svn4_1308"
-
-><td id="1308"><a href="#1308">1308</a></td></tr
-><tr id="gr_svn4_1309"
-
-><td id="1309"><a href="#1309">1309</a></td></tr
-><tr id="gr_svn4_1310"
-
-><td id="1310"><a href="#1310">1310</a></td></tr
-><tr id="gr_svn4_1311"
-
-><td id="1311"><a href="#1311">1311</a></td></tr
-><tr id="gr_svn4_1312"
-
-><td id="1312"><a href="#1312">1312</a></td></tr
-><tr id="gr_svn4_1313"
-
-><td id="1313"><a href="#1313">1313</a></td></tr
-><tr id="gr_svn4_1314"
-
-><td id="1314"><a href="#1314">1314</a></td></tr
-><tr id="gr_svn4_1315"
-
-><td id="1315"><a href="#1315">1315</a></td></tr
-><tr id="gr_svn4_1316"
-
-><td id="1316"><a href="#1316">1316</a></td></tr
-><tr id="gr_svn4_1317"
-
-><td id="1317"><a href="#1317">1317</a></td></tr
-><tr id="gr_svn4_1318"
-
-><td id="1318"><a href="#1318">1318</a></td></tr
-><tr id="gr_svn4_1319"
-
-><td id="1319"><a href="#1319">1319</a></td></tr
-><tr id="gr_svn4_1320"
-
-><td id="1320"><a href="#1320">1320</a></td></tr
-><tr id="gr_svn4_1321"
-
-><td id="1321"><a href="#1321">1321</a></td></tr
-><tr id="gr_svn4_1322"
-
-><td id="1322"><a href="#1322">1322</a></td></tr
-><tr id="gr_svn4_1323"
-
-><td id="1323"><a href="#1323">1323</a></td></tr
-><tr id="gr_svn4_1324"
-
-><td id="1324"><a href="#1324">1324</a></td></tr
-><tr id="gr_svn4_1325"
-
-><td id="1325"><a href="#1325">1325</a></td></tr
-><tr id="gr_svn4_1326"
-
-><td id="1326"><a href="#1326">1326</a></td></tr
-><tr id="gr_svn4_1327"
-
-><td id="1327"><a href="#1327">1327</a></td></tr
-><tr id="gr_svn4_1328"
-
-><td id="1328"><a href="#1328">1328</a></td></tr
-><tr id="gr_svn4_1329"
-
-><td id="1329"><a href="#1329">1329</a></td></tr
-><tr id="gr_svn4_1330"
-
-><td id="1330"><a href="#1330">1330</a></td></tr
-><tr id="gr_svn4_1331"
-
-><td id="1331"><a href="#1331">1331</a></td></tr
-><tr id="gr_svn4_1332"
-
-><td id="1332"><a href="#1332">1332</a></td></tr
-><tr id="gr_svn4_1333"
-
-><td id="1333"><a href="#1333">1333</a></td></tr
-><tr id="gr_svn4_1334"
-
-><td id="1334"><a href="#1334">1334</a></td></tr
-><tr id="gr_svn4_1335"
-
-><td id="1335"><a href="#1335">1335</a></td></tr
-><tr id="gr_svn4_1336"
-
-><td id="1336"><a href="#1336">1336</a></td></tr
-><tr id="gr_svn4_1337"
-
-><td id="1337"><a href="#1337">1337</a></td></tr
-><tr id="gr_svn4_1338"
-
-><td id="1338"><a href="#1338">1338</a></td></tr
-><tr id="gr_svn4_1339"
-
-><td id="1339"><a href="#1339">1339</a></td></tr
-><tr id="gr_svn4_1340"
-
-><td id="1340"><a href="#1340">1340</a></td></tr
-><tr id="gr_svn4_1341"
-
-><td id="1341"><a href="#1341">1341</a></td></tr
-><tr id="gr_svn4_1342"
-
-><td id="1342"><a href="#1342">1342</a></td></tr
-><tr id="gr_svn4_1343"
-
-><td id="1343"><a href="#1343">1343</a></td></tr
-><tr id="gr_svn4_1344"
-
-><td id="1344"><a href="#1344">1344</a></td></tr
-><tr id="gr_svn4_1345"
-
-><td id="1345"><a href="#1345">1345</a></td></tr
-><tr id="gr_svn4_1346"
-
-><td id="1346"><a href="#1346">1346</a></td></tr
-><tr id="gr_svn4_1347"
-
-><td id="1347"><a href="#1347">1347</a></td></tr
-><tr id="gr_svn4_1348"
-
-><td id="1348"><a href="#1348">1348</a></td></tr
-><tr id="gr_svn4_1349"
-
-><td id="1349"><a href="#1349">1349</a></td></tr
-><tr id="gr_svn4_1350"
-
-><td id="1350"><a href="#1350">1350</a></td></tr
-><tr id="gr_svn4_1351"
-
-><td id="1351"><a href="#1351">1351</a></td></tr
-><tr id="gr_svn4_1352"
-
-><td id="1352"><a href="#1352">1352</a></td></tr
-><tr id="gr_svn4_1353"
-
-><td id="1353"><a href="#1353">1353</a></td></tr
-><tr id="gr_svn4_1354"
-
-><td id="1354"><a href="#1354">1354</a></td></tr
-><tr id="gr_svn4_1355"
-
-><td id="1355"><a href="#1355">1355</a></td></tr
-><tr id="gr_svn4_1356"
-
-><td id="1356"><a href="#1356">1356</a></td></tr
-><tr id="gr_svn4_1357"
-
-><td id="1357"><a href="#1357">1357</a></td></tr
-><tr id="gr_svn4_1358"
-
-><td id="1358"><a href="#1358">1358</a></td></tr
-><tr id="gr_svn4_1359"
-
-><td id="1359"><a href="#1359">1359</a></td></tr
-><tr id="gr_svn4_1360"
-
-><td id="1360"><a href="#1360">1360</a></td></tr
-><tr id="gr_svn4_1361"
-
-><td id="1361"><a href="#1361">1361</a></td></tr
-><tr id="gr_svn4_1362"
-
-><td id="1362"><a href="#1362">1362</a></td></tr
-><tr id="gr_svn4_1363"
-
-><td id="1363"><a href="#1363">1363</a></td></tr
-><tr id="gr_svn4_1364"
-
-><td id="1364"><a href="#1364">1364</a></td></tr
-><tr id="gr_svn4_1365"
-
-><td id="1365"><a href="#1365">1365</a></td></tr
-><tr id="gr_svn4_1366"
-
-><td id="1366"><a href="#1366">1366</a></td></tr
-><tr id="gr_svn4_1367"
-
-><td id="1367"><a href="#1367">1367</a></td></tr
-></table></pre>
-<pre><table width="100%"><tr class="nocursor"><td></td></tr></table></pre>
-</td>
-<td id="lines">
-<pre class="prettyprint"><table width="100%"><tr class="cursor_stop cursor_hidden"><td></td></tr></table></pre>
-<pre class="prettyprint lang-cpp"><table id="src_table_0"><tr
-id=sl_svn4_1
-
-><td class="source">//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=//<br></td></tr
-><tr
-id=sl_svn4_2
-
-><td class="source">// Projet: MQ2AdvPath.cpp<br></td></tr
-><tr
-id=sl_svn4_3
-
-><td class="source">// Author: A_Enchanter_00<br></td></tr
-><tr
-id=sl_svn4_4
-
-><td class="source">//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=//<br></td></tr
-><tr
-id=sl_svn4_5
-
-><td class="source">//<br></td></tr
-><tr
-id=sl_svn4_6
-
-><td class="source">#include &quot;../MQ2Plugin.h&quot;<br></td></tr
-><tr
-id=sl_svn4_7
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_8
-
-><td class="source">#include &lt;vector&gt;<br></td></tr
-><tr
-id=sl_svn4_9
-
-><td class="source">#include &lt;list&gt;<br></td></tr
-><tr
-id=sl_svn4_10
-
-><td class="source">#include &lt;direct.h&gt;<br></td></tr
-><tr
-id=sl_svn4_11
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_12
-
-><td class="source">PreSetup(&quot;MQ2AdvPath&quot;);<br></td></tr
-><tr
-id=sl_svn4_13
-
-><td class="source">PLUGIN_VERSION(8.1010);<br></td></tr
-><tr
-id=sl_svn4_14
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_15
-
-><td class="source">#define       FOLLOW_OFF				0<br></td></tr
-><tr
-id=sl_svn4_16
-
-><td class="source">#define       FOLLOW_FOLLOWING			1<br></td></tr
-><tr
-id=sl_svn4_17
-
-><td class="source">#define       FOLLOW_PLAYING			2<br></td></tr
-><tr
-id=sl_svn4_18
-
-><td class="source">#define       FOLLOW_RECORDING			3<br></td></tr
-><tr
-id=sl_svn4_19
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_20
-
-><td class="source">#define       STATUS_OFF				0<br></td></tr
-><tr
-id=sl_svn4_21
-
-><td class="source">#define       STATUS_ON					1<br></td></tr
-><tr
-id=sl_svn4_22
-
-><td class="source">#define       STATUS_PAUSED				2<br></td></tr
-><tr
-id=sl_svn4_23
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_24
-
-><td class="source">#define       DISTANCE_BETWEN_LOG		5<br></td></tr
-><tr
-id=sl_svn4_25
-
-><td class="source">#define       DISTANCE_OPEN_DOOR_CLOSE	20<br></td></tr
-><tr
-id=sl_svn4_26
-
-><td class="source">#define       ANGEL_OPEN_DOOR_CLOSE		50.0<br></td></tr
-><tr
-id=sl_svn4_27
-
-><td class="source">#define       DISTANCE_OPEN_DOOR_LONG	50<br></td></tr
-><tr
-id=sl_svn4_28
-
-><td class="source">#define       ANGEL_OPEN_DOOR_LONG		95.0<br></td></tr
-><tr
-id=sl_svn4_29
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_30
-
-><td class="source">// Timer Structure<br></td></tr
-><tr
-id=sl_svn4_31
-
-><td class="source">struct Position {<br></td></tr
-><tr
-id=sl_svn4_32
-
-><td class="source">	FLOAT X;<br></td></tr
-><tr
-id=sl_svn4_33
-
-><td class="source">	FLOAT Y;<br></td></tr
-><tr
-id=sl_svn4_34
-
-><td class="source">	FLOAT Z;<br></td></tr
-><tr
-id=sl_svn4_35
-
-><td class="source">	FLOAT Heading;<br></td></tr
-><tr
-id=sl_svn4_36
-
-><td class="source">	char CheckPoint[MAX_STRING];<br></td></tr
-><tr
-id=sl_svn4_37
-
-><td class="source">	bool Warping;<br></td></tr
-><tr
-id=sl_svn4_38
-
-><td class="source">} pPosition;<br></td></tr
-><tr
-id=sl_svn4_39
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_40
-
-><td class="source">long FollowState = FOLLOW_OFF;		// Active?<br></td></tr
-><tr
-id=sl_svn4_41
-
-><td class="source">long StatusState = STATUS_OFF;		// Active?<br></td></tr
-><tr
-id=sl_svn4_42
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_43
-
-><td class="source">long FollowSpawnDistance = 20;		// Active?<br></td></tr
-><tr
-id=sl_svn4_44
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_45
-
-><td class="source">long FollowIdle = 0;				// FollowIdle time when Follow on?<br></td></tr
-><tr
-id=sl_svn4_46
-
-><td class="source">long NextClickDoor = 0;				// NextClickDoor when Follow on?<br></td></tr
-><tr
-id=sl_svn4_47
-
-><td class="source">long PauseDoor = 0;					// PauseDoor paused Follow on and near door?<br></td></tr
-><tr
-id=sl_svn4_48
-
-><td class="source">bool AutoOpenDoor = true;<br></td></tr
-><tr
-id=sl_svn4_49
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_50
-
-><td class="source">bool DoOpenDoor = false;<br></td></tr
-><tr
-id=sl_svn4_51
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_52
-
-><td class="source">// INI VARS<br></td></tr
-><tr
-id=sl_svn4_53
-
-><td class="source">long AutoStopFollow = 0;<br></td></tr
-><tr
-id=sl_svn4_54
-
-><td class="source">long AutoStopPath = 0;<br></td></tr
-><tr
-id=sl_svn4_55
-
-><td class="source">bool UseStuckLogic = true;<br></td></tr
-><tr
-id=sl_svn4_56
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_57
-
-><td class="source">bool PlayReverse = false;			// Play Reversed ?<br></td></tr
-><tr
-id=sl_svn4_58
-
-><td class="source">bool PlayLoop = false;				// Play Loop? a-&gt;b a-&gt;b a-&gt;b a-&gt;b ....<br></td></tr
-><tr
-id=sl_svn4_59
-
-><td class="source">//bool PlayReturn = false;			// Play Return? a-&gt;b b-&gt;a<br></td></tr
-><tr
-id=sl_svn4_60
-
-><td class="source">long PlayWaypoint = 0;<br></td></tr
-><tr
-id=sl_svn4_61
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_62
-
-><td class="source">long MonitorID = 0;					// Spawn To Monitor and follow<br></td></tr
-><tr
-id=sl_svn4_63
-
-><td class="source">char MonitorName[MAX_STRING] = {NULL};				// Spawn To Monitor Name used when following across zones<br></td></tr
-><tr
-id=sl_svn4_64
-
-><td class="source">long MonitorZoneID = 0;				// Monitor Zone ID<br></td></tr
-><tr
-id=sl_svn4_65
-
-><td class="source">FLOAT MonitorX = 0;					// Spawn To MonitorX<br></td></tr
-><tr
-id=sl_svn4_66
-
-><td class="source">FLOAT MonitorY = 0;					// Spawn To MonitorY<br></td></tr
-><tr
-id=sl_svn4_67
-
-><td class="source">FLOAT MonitorZ = 0;					// Spawn To MonitorZ<br></td></tr
-><tr
-id=sl_svn4_68
-
-><td class="source">FLOAT MonitorHeading = 0;			// Spawn To MonitorHeading<br></td></tr
-><tr
-id=sl_svn4_69
-
-><td class="source">bool MonitorWarp = false;			// Spawn To Monitor has warped<br></td></tr
-><tr
-id=sl_svn4_70
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_71
-
-><td class="source">FLOAT MeMonitorX = 0;					// MeMonitorX monitor your self<br></td></tr
-><tr
-id=sl_svn4_72
-
-><td class="source">FLOAT MeMonitorY = 0;					// MeMonitorY monitor your self<br></td></tr
-><tr
-id=sl_svn4_73
-
-><td class="source">FLOAT MeMonitorZ = 0;					// MeMonitorZ monitor your self<br></td></tr
-><tr
-id=sl_svn4_74
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_75
-
-><td class="source">CHAR Buffer[MAX_STRING] = {0};					// Buffer for String manipulatsion<br></td></tr
-><tr
-id=sl_svn4_76
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_77
-
-><td class="source">PCHAR TloIndex = {0};							// TloIndex for String manipulatsion<br></td></tr
-><tr
-id=sl_svn4_78
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_79
-
-><td class="source">CHAR SavePathName[MAX_STRING] = {NULL};			// Buffer for Save Path Name<br></td></tr
-><tr
-id=sl_svn4_80
-
-><td class="source">CHAR SavePathZone[MAX_STRING] = {NULL};			// Buffer for Save Zone Name<br></td></tr
-><tr
-id=sl_svn4_81
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_82
-
-><td class="source">CHAR PathNameZone[MAX_STRING] = {NULL};			// Play path across zone lines<br></td></tr
-><tr
-id=sl_svn4_83
-
-><td class="source">CHAR SpawnNameZone[MAX_STRING] = {NULL};		// Follow Spawn Across zonelines<br></td></tr
-><tr
-id=sl_svn4_84
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_85
-
-><td class="source">bool MoveBindsLoaded = false;<br></td></tr
-><tr
-id=sl_svn4_86
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_87
-
-><td class="source">list&lt;Position&gt;	FollowPath;			// FollowPath<br></td></tr
-><tr
-id=sl_svn4_88
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_89
-
-><td class="source">HMODULE EQWhMod=0; <br></td></tr
-><tr
-id=sl_svn4_90
-
-><td class="source">typedef HWND   (__stdcall *fEQW_GetDisplayWindow)(VOID); <br></td></tr
-><tr
-id=sl_svn4_91
-
-><td class="source">fEQW_GetDisplayWindow EQW_GetDisplayWindow=0; <br></td></tr
-><tr
-id=sl_svn4_92
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_93
-
-><td class="source">class MQ2AdvPathType *pAdvPathType=0;<br></td></tr
-><tr
-id=sl_svn4_94
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_95
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_96
-
-><td class="source">VOID MQFollowCommand(PSPAWNINFO pChar, PCHAR szLine);<br></td></tr
-><tr
-id=sl_svn4_97
-
-><td class="source">void ReleaseKeys();<br></td></tr
-><tr
-id=sl_svn4_98
-
-><td class="source">void DoWalk(bool walk = false);<br></td></tr
-><tr
-id=sl_svn4_99
-
-><td class="source">void DoFwd(bool hold, bool walk = false);<br></td></tr
-><tr
-id=sl_svn4_100
-
-><td class="source">void DoBck(bool hold);<br></td></tr
-><tr
-id=sl_svn4_101
-
-><td class="source">void DoLft(bool hold);<br></td></tr
-><tr
-id=sl_svn4_102
-
-><td class="source">void DoRgt(bool hold);<br></td></tr
-><tr
-id=sl_svn4_103
-
-><td class="source">void DoStop();<br></td></tr
-><tr
-id=sl_svn4_104
-
-><td class="source">void LookAt(FLOAT X,FLOAT Y,FLOAT Z);<br></td></tr
-><tr
-id=sl_svn4_105
-
-><td class="source">VOID ClearAll();<br></td></tr
-><tr
-id=sl_svn4_106
-
-><td class="source">VOID ClearOne(list&lt;Position&gt;::iterator &amp;CurList);<br></td></tr
-><tr
-id=sl_svn4_107
-
-><td class="source">VOID AddWaypoint(long SpawnID,bool Warping=false);<br></td></tr
-><tr
-id=sl_svn4_108
-
-><td class="source">PDOOR ClosestDoor();<br></td></tr
-><tr
-id=sl_svn4_109
-
-><td class="source">bool IsOpenDoor( PDOOR pDoor );<br></td></tr
-><tr
-id=sl_svn4_110
-
-><td class="source">VOID OpenDoor();<br></td></tr
-><tr
-id=sl_svn4_111
-
-><td class="source">bool InFront( float X,float Y, float Angel, bool Reverse=false );<br></td></tr
-><tr
-id=sl_svn4_112
-
-><td class="source">VOID SavePath( PCHAR PathName ,PCHAR PathZone, bool SaveAll=false );<br></td></tr
-><tr
-id=sl_svn4_113
-
-><td class="source">bool LoadPath( PCHAR PathName );<br></td></tr
-><tr
-id=sl_svn4_114
-
-><td class="source">VOID FollowSpawn();<br></td></tr
-><tr
-id=sl_svn4_115
-
-><td class="source">VOID FollowWaypointsInit(float smart);<br></td></tr
-><tr
-id=sl_svn4_116
-
-><td class="source">VOID FollowWaypoints();<br></td></tr
-><tr
-id=sl_svn4_117
-
-><td class="source">VOID ClearLag();<br></td></tr
-><tr
-id=sl_svn4_118
-
-><td class="source">VOID RecordingWaypoints();<br></td></tr
-><tr
-id=sl_svn4_119
-
-><td class="source">void __stdcall WarpingDetect(unsigned int ID, void *pData, PBLECHVALUE pValues);<br></td></tr
-><tr
-id=sl_svn4_120
-
-><td class="source">void CreateBinds();<br></td></tr
-><tr
-id=sl_svn4_121
-
-><td class="source">void DestroyBinds();<br></td></tr
-><tr
-id=sl_svn4_122
-
-><td class="source">void MQCheckFollowCommand(PCHAR Name, BOOL Down);<br></td></tr
-><tr
-id=sl_svn4_123
-
-><td class="source">VOID ReadINI();<br></td></tr
-><tr
-id=sl_svn4_124
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_125
-
-><td class="source">void StuckCheck(bool reset=false);<br></td></tr
-><tr
-id=sl_svn4_126
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_127
-
-><td class="source">vector&lt;PMAPLINE&gt;  pFollowPath;<br></td></tr
-><tr
-id=sl_svn4_128
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_129
-
-><td class="source">unsigned long thisClock = clock();<br></td></tr
-><tr
-id=sl_svn4_130
-
-><td class="source">unsigned long lastClock = clock();<br></td></tr
-><tr
-id=sl_svn4_131
-
-><td class="source">long DistanceMod = 0;<br></td></tr
-><tr
-id=sl_svn4_132
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_133
-
-><td class="source">inline PMAPLINE InitLine() {<br></td></tr
-><tr
-id=sl_svn4_134
-
-><td class="source">  typedef PMAPLINE (__cdecl *InitLineCALL) ();<br></td></tr
-><tr
-id=sl_svn4_135
-
-><td class="source">  PMQPLUGIN pLook=pPlugins;<br></td></tr
-><tr
-id=sl_svn4_136
-
-><td class="source">  while(pLook &amp;&amp; stricmp(pLook-&gt;szFilename,&quot;MQ2Map&quot;)) pLook=pLook-&gt;pNext;<br></td></tr
-><tr
-id=sl_svn4_137
-
-><td class="source">  if(pLook)<br></td></tr
-><tr
-id=sl_svn4_138
-
-><td class="source">	  if(InitLineCALL Request=(InitLineCALL)GetProcAddress(pLook-&gt;hModule,&quot;MQ2MapAddLine&quot;))<br></td></tr
-><tr
-id=sl_svn4_139
-
-><td class="source">		  return Request();<br></td></tr
-><tr
-id=sl_svn4_140
-
-><td class="source">  return 0;<br></td></tr
-><tr
-id=sl_svn4_141
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_142
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_143
-
-><td class="source">inline void DeleteLine(PMAPLINE pLine) {<br></td></tr
-><tr
-id=sl_svn4_144
-
-><td class="source">  typedef VOID (__cdecl *DeleteLineCALL) (PMAPLINE);<br></td></tr
-><tr
-id=sl_svn4_145
-
-><td class="source">  PMQPLUGIN pLook=pPlugins;<br></td></tr
-><tr
-id=sl_svn4_146
-
-><td class="source">  while(pLook &amp;&amp; stricmp(pLook-&gt;szFilename,&quot;MQ2Map&quot;)) pLook=pLook-&gt;pNext;<br></td></tr
-><tr
-id=sl_svn4_147
-
-><td class="source">  if(pLook)<br></td></tr
-><tr
-id=sl_svn4_148
-
-><td class="source">	  if(DeleteLineCALL Request=(DeleteLineCALL)GetProcAddress(pLook-&gt;hModule,&quot;MQ2MapDeleteLine&quot;))<br></td></tr
-><tr
-id=sl_svn4_149
-
-><td class="source">		  Request(pLine);<br></td></tr
-><tr
-id=sl_svn4_150
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_151
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_152
-
-><td class="source">void MapClear() {<br></td></tr
-><tr
-id=sl_svn4_153
-
-><td class="source">	if (pFollowPath.size())	{<br></td></tr
-><tr
-id=sl_svn4_154
-
-><td class="source">		for (unsigned long i=0; i&lt;(unsigned long)pFollowPath.size(); i++) DeleteLine(pFollowPath[i]);<br></td></tr
-><tr
-id=sl_svn4_155
-
-><td class="source">		pFollowPath.clear();<br></td></tr
-><tr
-id=sl_svn4_156
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_157
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_158
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_159
-
-><td class="source">bool BardClass() {<br></td></tr
-><tr
-id=sl_svn4_160
-
-><td class="source">  return (strncmp(pEverQuest-&gt;GetClassDesc(GetCharInfo2()-&gt;Class &amp; 0xFF),&quot;Bard&quot;,5))?false:true;<br></td></tr
-><tr
-id=sl_svn4_161
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_162
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_163
-
-><td class="source">/*<br></td></tr
-><tr
-id=sl_svn4_164
-
-><td class="source">//	Ingame commands:<br></td></tr
-><tr
-id=sl_svn4_165
-
-><td class="source">//	/afollow    # Follow&#39;s your Target<br></td></tr
-><tr
-id=sl_svn4_166
-
-><td class="source">*/<br></td></tr
-><tr
-id=sl_svn4_167
-
-><td class="source">VOID MQFollowCommand(PSPAWNINFO pChar, PCHAR szLine) {<br></td></tr
-><tr
-id=sl_svn4_168
-
-><td class="source">	DebugSpewAlways(&quot;MQ2AdvPath::MQFollowCommand()&quot;);<br></td></tr
-><tr
-id=sl_svn4_169
-
-><td class="source">	if(!gbInZone || !GetCharInfo() || !GetCharInfo()-&gt;pSpawn) return;<br></td></tr
-><tr
-id=sl_svn4_170
-
-><td class="source">	bool doFollow = false;<br></td></tr
-><tr
-id=sl_svn4_171
-
-><td class="source">	bool doFollowZone = false;<br></td></tr
-><tr
-id=sl_svn4_172
-
-><td class="source">	bool doAutoOpenDoor = true;<br></td></tr
-><tr
-id=sl_svn4_173
-
-><td class="source">	long MyTarget=(pTarget)?((long)((PSPAWNINFO)pTarget)-&gt;SpawnID):0;<br></td></tr
-><tr
-id=sl_svn4_174
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_175
-
-><td class="source">	if ( szLine[0]==0 ) {<br></td></tr
-><tr
-id=sl_svn4_176
-
-><td class="source">		if(MonitorID || FollowPath.size()) {<br></td></tr
-><tr
-id=sl_svn4_177
-
-><td class="source">			ClearAll();<br></td></tr
-><tr
-id=sl_svn4_178
-
-><td class="source">			return;<br></td></tr
-><tr
-id=sl_svn4_179
-
-><td class="source">		} else {<br></td></tr
-><tr
-id=sl_svn4_180
-
-><td class="source">			doFollow = true;<br></td></tr
-><tr
-id=sl_svn4_181
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_182
-
-><td class="source">	} else {<br></td></tr
-><tr
-id=sl_svn4_183
-
-><td class="source">		long iParm=0;<br></td></tr
-><tr
-id=sl_svn4_184
-
-><td class="source">		do {<br></td></tr
-><tr
-id=sl_svn4_185
-
-><td class="source">			GetArg(Buffer,szLine,++iParm);<br></td></tr
-><tr
-id=sl_svn4_186
-
-><td class="source">			if(Buffer[0]==0) break;<br></td></tr
-><tr
-id=sl_svn4_187
-
-><td class="source">			if(!strnicmp(Buffer,&quot;on&quot;,2)) {<br></td></tr
-><tr
-id=sl_svn4_188
-
-><td class="source">				doFollow = true;<br></td></tr
-><tr
-id=sl_svn4_189
-
-><td class="source">			} else if(!strnicmp(Buffer,&quot;off&quot;,3)) {<br></td></tr
-><tr
-id=sl_svn4_190
-
-><td class="source">				ClearAll();<br></td></tr
-><tr
-id=sl_svn4_191
-
-><td class="source">				return;<br></td></tr
-><tr
-id=sl_svn4_192
-
-><td class="source">			} else if(!strnicmp(Buffer,&quot;pause&quot;,5)) {<br></td></tr
-><tr
-id=sl_svn4_193
-
-><td class="source">				WriteChatf(&quot;[MQ2AdvPath] Follow Paused&quot;);<br></td></tr
-><tr
-id=sl_svn4_194
-
-><td class="source">				DoStop();<br></td></tr
-><tr
-id=sl_svn4_195
-
-><td class="source">				StatusState = STATUS_PAUSED;<br></td></tr
-><tr
-id=sl_svn4_196
-
-><td class="source">				return;<br></td></tr
-><tr
-id=sl_svn4_197
-
-><td class="source">			} else if(!strnicmp(Buffer,&quot;unpause&quot;,7)) {<br></td></tr
-><tr
-id=sl_svn4_198
-
-><td class="source">				WriteChatf(&quot;[MQ2AdvPath] Follow UnPaused&quot;);<br></td></tr
-><tr
-id=sl_svn4_199
-
-><td class="source">				StatusState = STATUS_ON;<br></td></tr
-><tr
-id=sl_svn4_200
-
-><td class="source">				StuckCheck(true);<br></td></tr
-><tr
-id=sl_svn4_201
-
-><td class="source">				return;<br></td></tr
-><tr
-id=sl_svn4_202
-
-><td class="source">			} else if(!strnicmp(Buffer,&quot;spawn&quot;,5)) {<br></td></tr
-><tr
-id=sl_svn4_203
-
-><td class="source">				GetArg(Buffer,szLine,++iParm);<br></td></tr
-><tr
-id=sl_svn4_204
-
-><td class="source">				MyTarget = atol(Buffer);<br></td></tr
-><tr
-id=sl_svn4_205
-
-><td class="source">				doFollow = true;<br></td></tr
-><tr
-id=sl_svn4_206
-
-><td class="source">			} else if(!strnicmp(Buffer,&quot;nodoor&quot;,6)) {<br></td></tr
-><tr
-id=sl_svn4_207
-
-><td class="source">				doAutoOpenDoor = false;<br></td></tr
-><tr
-id=sl_svn4_208
-
-><td class="source">				doFollow = true;<br></td></tr
-><tr
-id=sl_svn4_209
-
-><td class="source">			} else if(!strnicmp(Buffer,&quot;door&quot;,4)) {<br></td></tr
-><tr
-id=sl_svn4_210
-
-><td class="source">				doAutoOpenDoor = true;<br></td></tr
-><tr
-id=sl_svn4_211
-
-><td class="source">				doFollow = true;<br></td></tr
-><tr
-id=sl_svn4_212
-
-><td class="source">			} else if(!strnicmp(Buffer,&quot;nozone&quot;,6)) {<br></td></tr
-><tr
-id=sl_svn4_213
-
-><td class="source">				doFollowZone = false;<br></td></tr
-><tr
-id=sl_svn4_214
-
-><td class="source">				doFollow = true;<br></td></tr
-><tr
-id=sl_svn4_215
-
-><td class="source">			} else if(!strnicmp(Buffer,&quot;zone&quot;,4)) {<br></td></tr
-><tr
-id=sl_svn4_216
-
-><td class="source">				doFollowZone = true;<br></td></tr
-><tr
-id=sl_svn4_217
-
-><td class="source">				doFollow = true;<br></td></tr
-><tr
-id=sl_svn4_218
-
-><td class="source">			} else if(!strnicmp(Buffer,&quot;loadini&quot;,7)) {<br></td></tr
-><tr
-id=sl_svn4_219
-
-><td class="source">				ReadINI();<br></td></tr
-><tr
-id=sl_svn4_220
-
-><td class="source">			} else {<br></td></tr
-><tr
-id=sl_svn4_221
-
-><td class="source">				if( atol(Buffer) ) {<br></td></tr
-><tr
-id=sl_svn4_222
-
-><td class="source">					if( atol(Buffer) &lt; 1 ) FollowSpawnDistance = 1;<br></td></tr
-><tr
-id=sl_svn4_223
-
-><td class="source">					else FollowSpawnDistance = atol(Buffer);<br></td></tr
-><tr
-id=sl_svn4_224
-
-><td class="source">				}<br></td></tr
-><tr
-id=sl_svn4_225
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_226
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_227
-
-><td class="source">		while(true);<br></td></tr
-><tr
-id=sl_svn4_228
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_229
-
-><td class="source">	if( doFollow ) {<br></td></tr
-><tr
-id=sl_svn4_230
-
-><td class="source">		ClearAll();<br></td></tr
-><tr
-id=sl_svn4_231
-
-><td class="source">		if(MyTarget == GetCharInfo()-&gt;pSpawn-&gt;SpawnID) MonitorID = 0;<br></td></tr
-><tr
-id=sl_svn4_232
-
-><td class="source">		else MonitorID = MyTarget;<br></td></tr
-><tr
-id=sl_svn4_233
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_234
-
-><td class="source">		if(PSPAWNINFO pSpawn = (PSPAWNINFO)GetSpawnByID(MonitorID)) {<br></td></tr
-><tr
-id=sl_svn4_235
-
-><td class="source">			AutoOpenDoor = doAutoOpenDoor;<br></td></tr
-><tr
-id=sl_svn4_236
-
-><td class="source">			AddWaypoint(MonitorID);<br></td></tr
-><tr
-id=sl_svn4_237
-
-><td class="source">			FollowState = FOLLOW_FOLLOWING;<br></td></tr
-><tr
-id=sl_svn4_238
-
-><td class="source">			StatusState = STATUS_ON;<br></td></tr
-><tr
-id=sl_svn4_239
-
-><td class="source">			WriteChatf(&quot;[MQ2AdvPath] Following %s&quot;, pSpawn-&gt;Name);<br></td></tr
-><tr
-id=sl_svn4_240
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_241
-
-><td class="source">			if( doFollowZone ) {<br></td></tr
-><tr
-id=sl_svn4_242
-
-><td class="source">				strcpy(SpawnNameZone,pSpawn-&gt;Name);<br></td></tr
-><tr
-id=sl_svn4_243
-
-><td class="source">				MonitorZoneID = GetCharInfo()-&gt;zoneId;<br></td></tr
-><tr
-id=sl_svn4_244
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_245
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_246
-
-><td class="source">			MeMonitorX = GetCharInfo()-&gt;pSpawn-&gt;X; // MeMonitorX monitor your self<br></td></tr
-><tr
-id=sl_svn4_247
-
-><td class="source">			MeMonitorY = GetCharInfo()-&gt;pSpawn-&gt;Y; // MeMonitorY monitor your self<br></td></tr
-><tr
-id=sl_svn4_248
-
-><td class="source">			MeMonitorZ = GetCharInfo()-&gt;pSpawn-&gt;Z; // MeMonitorZ monitor your self<br></td></tr
-><tr
-id=sl_svn4_249
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_250
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_251
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_252
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_253
-
-><td class="source">VOID MQPlayCommand(PSPAWNINFO pChar, PCHAR szLine) {<br></td></tr
-><tr
-id=sl_svn4_254
-
-><td class="source">	if(!gbInZone || !GetCharInfo() || !GetCharInfo()-&gt;pSpawn) return;<br></td></tr
-><tr
-id=sl_svn4_255
-
-><td class="source">	DebugSpewAlways(&quot;MQ2AdvPath::MQPlayCommand()&quot;);<br></td></tr
-><tr
-id=sl_svn4_256
-
-><td class="source">	bool doPlay = false;<br></td></tr
-><tr
-id=sl_svn4_257
-
-><td class="source">	bool doPlayZone = false;<br></td></tr
-><tr
-id=sl_svn4_258
-
-><td class="source">	float doPlaySmart = 0.00;<br></td></tr
-><tr
-id=sl_svn4_259
-
-><td class="source">	char pathName[MAX_STRING] = {NULL};<br></td></tr
-><tr
-id=sl_svn4_260
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_261
-
-><td class="source">	long iParm=0;<br></td></tr
-><tr
-id=sl_svn4_262
-
-><td class="source">	do {<br></td></tr
-><tr
-id=sl_svn4_263
-
-><td class="source">		GetArg(Buffer,szLine,++iParm);<br></td></tr
-><tr
-id=sl_svn4_264
-
-><td class="source">		if(Buffer[0]==0) break;<br></td></tr
-><tr
-id=sl_svn4_265
-
-><td class="source">		if(!strnicmp(Buffer,&quot;off&quot;,3)) {<br></td></tr
-><tr
-id=sl_svn4_266
-
-><td class="source">			ClearAll();<br></td></tr
-><tr
-id=sl_svn4_267
-
-><td class="source">			return;<br></td></tr
-><tr
-id=sl_svn4_268
-
-><td class="source">		} else if(!strnicmp(Buffer,&quot;pause&quot;,5)) {<br></td></tr
-><tr
-id=sl_svn4_269
-
-><td class="source">			WriteChatf(&quot;[MQ2AdvPath] Playing Paused&quot;);<br></td></tr
-><tr
-id=sl_svn4_270
-
-><td class="source">			DoStop();<br></td></tr
-><tr
-id=sl_svn4_271
-
-><td class="source">			StatusState = STATUS_PAUSED;<br></td></tr
-><tr
-id=sl_svn4_272
-
-><td class="source">		} else if(!strnicmp(Buffer,&quot;unpause&quot;,7)) {<br></td></tr
-><tr
-id=sl_svn4_273
-
-><td class="source">			WriteChatf(&quot;[MQ2AdvPath] Playing UnPaused&quot;);<br></td></tr
-><tr
-id=sl_svn4_274
-
-><td class="source">			StatusState = STATUS_ON;<br></td></tr
-><tr
-id=sl_svn4_275
-
-><td class="source">			StuckCheck(true);<br></td></tr
-><tr
-id=sl_svn4_276
-
-><td class="source">		} else if(!strnicmp(Buffer,&quot;loop&quot;,4)) {<br></td></tr
-><tr
-id=sl_svn4_277
-
-><td class="source">			PlayLoop = true;<br></td></tr
-><tr
-id=sl_svn4_278
-
-><td class="source">		} else if(!strnicmp(Buffer,&quot;noloop&quot;,6)) {<br></td></tr
-><tr
-id=sl_svn4_279
-
-><td class="source">			PlayLoop = false;<br></td></tr
-><tr
-id=sl_svn4_280
-
-><td class="source">		} else if(!strnicmp(Buffer,&quot;reverse&quot;,7)) PlayReverse = true;<br></td></tr
-><tr
-id=sl_svn4_281
-
-><td class="source">		else if(!strnicmp(Buffer,&quot;normal&quot;,6)) PlayReverse = false;<br></td></tr
-><tr
-id=sl_svn4_282
-
-><td class="source">		else if(!strnicmp(Buffer,&quot;smart&quot;,5)) doPlaySmart = 100000.00;<br></td></tr
-><tr
-id=sl_svn4_283
-
-><td class="source">		else if(!strnicmp(Buffer,&quot;nosmart&quot;,7)) doPlaySmart = 0.00;<br></td></tr
-><tr
-id=sl_svn4_284
-
-><td class="source">		else if(!strnicmp(Buffer,&quot;nodoor&quot;,6)) AutoOpenDoor = false;<br></td></tr
-><tr
-id=sl_svn4_285
-
-><td class="source">		else if(!strnicmp(Buffer,&quot;door&quot;,4)) AutoOpenDoor = true;<br></td></tr
-><tr
-id=sl_svn4_286
-
-><td class="source">		else if(!strnicmp(Buffer,&quot;nozone&quot;,6)) doPlayZone = false;<br></td></tr
-><tr
-id=sl_svn4_287
-
-><td class="source">		else if(!strnicmp(Buffer,&quot;zone&quot;,4)) doPlayZone = true;<br></td></tr
-><tr
-id=sl_svn4_288
-
-><td class="source">		else if(!strnicmp(Buffer,&quot;loadini&quot;,7)) ReadINI();<br></td></tr
-><tr
-id=sl_svn4_289
-
-><td class="source">		else {<br></td></tr
-><tr
-id=sl_svn4_290
-
-><td class="source">			if( !FollowPath.size() &amp;&amp; FollowState == FOLLOW_OFF ) {<br></td></tr
-><tr
-id=sl_svn4_291
-
-><td class="source">				ClearAll();<br></td></tr
-><tr
-id=sl_svn4_292
-
-><td class="source">				strcpy(pathName,Buffer);<br></td></tr
-><tr
-id=sl_svn4_293
-
-><td class="source">				LoadPath(Buffer);<br></td></tr
-><tr
-id=sl_svn4_294
-
-><td class="source">				if(FollowPath.size()) {<br></td></tr
-><tr
-id=sl_svn4_295
-
-><td class="source">					WriteChatf(&quot;[MQ2AdvPath] Playing Path: %s&quot;,Buffer);<br></td></tr
-><tr
-id=sl_svn4_296
-
-><td class="source">					FollowState = FOLLOW_PLAYING;<br></td></tr
-><tr
-id=sl_svn4_297
-
-><td class="source">					StatusState = STATUS_ON;<br></td></tr
-><tr
-id=sl_svn4_298
-
-><td class="source">					doPlay = true;<br></td></tr
-><tr
-id=sl_svn4_299
-
-><td class="source">				} else {<br></td></tr
-><tr
-id=sl_svn4_300
-
-><td class="source">					WriteChatf(&quot;[MQ2AdvPath] Playing Path: %s Failed&quot;,Buffer);<br></td></tr
-><tr
-id=sl_svn4_301
-
-><td class="source">				}<br></td></tr
-><tr
-id=sl_svn4_302
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_303
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_304
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_305
-
-><td class="source">	while(true);<br></td></tr
-><tr
-id=sl_svn4_306
-
-><td class="source">	if( doPlayZone &amp;&amp; doPlay ) {<br></td></tr
-><tr
-id=sl_svn4_307
-
-><td class="source">		strcpy(PathNameZone,pathName);<br></td></tr
-><tr
-id=sl_svn4_308
-
-><td class="source">		MonitorZoneID = GetCharInfo()-&gt;zoneId;<br></td></tr
-><tr
-id=sl_svn4_309
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_310
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_311
-
-><td class="source">	if(doPlay) FollowWaypointsInit(doPlaySmart);<br></td></tr
-><tr
-id=sl_svn4_312
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_313
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_314
-
-><td class="source">VOID MQRecordCommand(PSPAWNINFO pChar, PCHAR szLine) {<br></td></tr
-><tr
-id=sl_svn4_315
-
-><td class="source">	if(!gbInZone || !GetCharInfo() || !GetCharInfo()-&gt;pSpawn) return;<br></td></tr
-><tr
-id=sl_svn4_316
-
-><td class="source">	DebugSpewAlways(&quot;MQ2AdvPath::MQPlayCommand()&quot;);<br></td></tr
-><tr
-id=sl_svn4_317
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_318
-
-><td class="source">	bool doSave = false;<br></td></tr
-><tr
-id=sl_svn4_319
-
-><td class="source">	bool doSaveAll = false;<br></td></tr
-><tr
-id=sl_svn4_320
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_321
-
-><td class="source">	long iParm=0;<br></td></tr
-><tr
-id=sl_svn4_322
-
-><td class="source">	GetArg(Buffer,szLine,++iParm);<br></td></tr
-><tr
-id=sl_svn4_323
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_324
-
-><td class="source">	if(!strnicmp(Buffer,&quot;save&quot;,4)) {<br></td></tr
-><tr
-id=sl_svn4_325
-
-><td class="source">		if(FollowState == FOLLOW_RECORDING &amp;&amp; StatusState ) {<br></td></tr
-><tr
-id=sl_svn4_326
-
-><td class="source">			if(!strnicmp(Buffer,&quot;saveall&quot;,7)) doSaveAll = true;<br></td></tr
-><tr
-id=sl_svn4_327
-
-><td class="source">			GetArg(Buffer,szLine,++iParm);<br></td></tr
-><tr
-id=sl_svn4_328
-
-><td class="source">			if(Buffer[0]!= NULL) {<br></td></tr
-><tr
-id=sl_svn4_329
-
-><td class="source">				strcpy(SavePathName,Buffer);<br></td></tr
-><tr
-id=sl_svn4_330
-
-><td class="source">				strcpy(SavePathZone,GetShortZone(GetCharInfo()-&gt;zoneId));<br></td></tr
-><tr
-id=sl_svn4_331
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_332
-
-><td class="source">			doSave = true;<br></td></tr
-><tr
-id=sl_svn4_333
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_334
-
-><td class="source">	} else if(!strnicmp(Buffer,&quot;checkpoint&quot;,10)) {<br></td></tr
-><tr
-id=sl_svn4_335
-
-><td class="source">		GetArg(Buffer,szLine,++iParm);<br></td></tr
-><tr
-id=sl_svn4_336
-
-><td class="source">		if(Buffer[0]==0) return;<br></td></tr
-><tr
-id=sl_svn4_337
-
-><td class="source">		if ( FollowPath.size() &amp;&amp; FollowState == FOLLOW_RECORDING ) {<br></td></tr
-><tr
-id=sl_svn4_338
-
-><td class="source">			int i = 1;<br></td></tr
-><tr
-id=sl_svn4_339
-
-><td class="source">			list&lt;Position&gt;::iterator CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_340
-
-><td class="source">			list&lt;Position&gt;::iterator EndList=FollowPath.end();<br></td></tr
-><tr
-id=sl_svn4_341
-
-><td class="source">			while(CurList!=EndList) {<br></td></tr
-><tr
-id=sl_svn4_342
-
-><td class="source">				if( FollowPath.size() == i ) {<br></td></tr
-><tr
-id=sl_svn4_343
-
-><td class="source">					strcpy(CurList-&gt;CheckPoint,Buffer);<br></td></tr
-><tr
-id=sl_svn4_344
-
-><td class="source">					return;<br></td></tr
-><tr
-id=sl_svn4_345
-
-><td class="source">				}<br></td></tr
-><tr
-id=sl_svn4_346
-
-><td class="source">				i++;<br></td></tr
-><tr
-id=sl_svn4_347
-
-><td class="source">				CurList++;<br></td></tr
-><tr
-id=sl_svn4_348
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_349
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_350
-
-><td class="source">	} else {<br></td></tr
-><tr
-id=sl_svn4_351
-
-><td class="source">		ClearAll();<br></td></tr
-><tr
-id=sl_svn4_352
-
-><td class="source">		//		GetArg(Buffer,szLine,++iParm);<br></td></tr
-><tr
-id=sl_svn4_353
-
-><td class="source">		if(Buffer[0]==0) {<br></td></tr
-><tr
-id=sl_svn4_354
-
-><td class="source">			SavePathZone[0] = NULL;<br></td></tr
-><tr
-id=sl_svn4_355
-
-><td class="source">			SavePathName[0] = NULL;<br></td></tr
-><tr
-id=sl_svn4_356
-
-><td class="source">		} else {<br></td></tr
-><tr
-id=sl_svn4_357
-
-><td class="source">			strcpy(SavePathName,Buffer);<br></td></tr
-><tr
-id=sl_svn4_358
-
-><td class="source">			strcpy(SavePathZone,GetShortZone(GetCharInfo()-&gt;zoneId));<br></td></tr
-><tr
-id=sl_svn4_359
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_360
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_361
-
-><td class="source">		WriteChatf(&quot;[MQ2AdvPath] Recording Path: %s Zone: %s&quot;,SavePathName,SavePathZone);<br></td></tr
-><tr
-id=sl_svn4_362
-
-><td class="source">		MonitorID = GetCharInfo()-&gt;pSpawn-&gt;SpawnID;<br></td></tr
-><tr
-id=sl_svn4_363
-
-><td class="source">		AddWaypoint(MonitorID);<br></td></tr
-><tr
-id=sl_svn4_364
-
-><td class="source">		FollowState = FOLLOW_RECORDING;<br></td></tr
-><tr
-id=sl_svn4_365
-
-><td class="source">		StatusState = STATUS_ON;<br></td></tr
-><tr
-id=sl_svn4_366
-
-><td class="source">		MeMonitorX = GetCharInfo()-&gt;pSpawn-&gt;X; // MeMonitorX monitor your self<br></td></tr
-><tr
-id=sl_svn4_367
-
-><td class="source">		MeMonitorY = GetCharInfo()-&gt;pSpawn-&gt;Y; // MeMonitorY monitor your self<br></td></tr
-><tr
-id=sl_svn4_368
-
-><td class="source">		MeMonitorZ = GetCharInfo()-&gt;pSpawn-&gt;Z; // MeMonitorZ monitor your self<br></td></tr
-><tr
-id=sl_svn4_369
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_370
-
-><td class="source">	if( doSave &amp;&amp; SavePathName[0]  &amp;&amp; SavePathZone[0] != NULL ) {<br></td></tr
-><tr
-id=sl_svn4_371
-
-><td class="source">		SavePath(SavePathName,SavePathZone,doSaveAll);<br></td></tr
-><tr
-id=sl_svn4_372
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_373
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_374
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_375
-
-><td class="source">//Movement Related Functions<br></td></tr
-><tr
-id=sl_svn4_376
-
-><td class="source">void ReleaseKeys() {<br></td></tr
-><tr
-id=sl_svn4_377
-
-><td class="source">	DoWalk(false);<br></td></tr
-><tr
-id=sl_svn4_378
-
-><td class="source">	DoFwd(false);<br></td></tr
-><tr
-id=sl_svn4_379
-
-><td class="source">	DoBck(false);<br></td></tr
-><tr
-id=sl_svn4_380
-
-><td class="source">	DoRgt(false);<br></td></tr
-><tr
-id=sl_svn4_381
-
-><td class="source">	DoLft(false);<br></td></tr
-><tr
-id=sl_svn4_382
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_383
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_384
-
-><td class="source">void MQCheckFollowCommand(PCHAR Name, BOOL Down) {<br></td></tr
-><tr
-id=sl_svn4_385
-
-><td class="source">	if(StatusState == STATUS_ON) {<br></td></tr
-><tr
-id=sl_svn4_386
-
-><td class="source">		if (FollowState == FOLLOW_FOLLOWING &amp;&amp; AutoStopFollow) {<br></td></tr
-><tr
-id=sl_svn4_387
-
-><td class="source">			if (AutoStopFollow == 1) {<br></td></tr
-><tr
-id=sl_svn4_388
-
-><td class="source">				WriteChatf(&quot;[MQ2AdvPath] Follow Paused&quot;);<br></td></tr
-><tr
-id=sl_svn4_389
-
-><td class="source">				StatusState = STATUS_PAUSED;<br></td></tr
-><tr
-id=sl_svn4_390
-
-><td class="source">				ReleaseKeys();<br></td></tr
-><tr
-id=sl_svn4_391
-
-><td class="source">			} else ClearAll();<br></td></tr
-><tr
-id=sl_svn4_392
-
-><td class="source">		} else if (FollowState == FOLLOW_PLAYING &amp;&amp; AutoStopPath) {<br></td></tr
-><tr
-id=sl_svn4_393
-
-><td class="source">			if (AutoStopPath == 1) {<br></td></tr
-><tr
-id=sl_svn4_394
-
-><td class="source">				WriteChatf(&quot;[MQ2AdvPath] Playing Paused&quot;);<br></td></tr
-><tr
-id=sl_svn4_395
-
-><td class="source">				StatusState = STATUS_PAUSED;<br></td></tr
-><tr
-id=sl_svn4_396
-
-><td class="source">				ReleaseKeys();<br></td></tr
-><tr
-id=sl_svn4_397
-
-><td class="source">			}else ClearAll();<br></td></tr
-><tr
-id=sl_svn4_398
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_399
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_400
-
-><td class="source">    return;<br></td></tr
-><tr
-id=sl_svn4_401
-
-><td class="source">} <br></td></tr
-><tr
-id=sl_svn4_402
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_403
-
-><td class="source">void DoWalk(bool walk) {<br></td></tr
-><tr
-id=sl_svn4_404
-
-><td class="source">	bool state_walking = (*EQADDR_RUNWALKSTATE) ? false : true;<br></td></tr
-><tr
-id=sl_svn4_405
-
-><td class="source">	float SpeedMultiplier = *((float*) &amp;(((PSPAWNINFO) pLocalPlayer)-&gt;SpeedMultiplier));<br></td></tr
-><tr
-id=sl_svn4_406
-
-><td class="source">	if (SpeedMultiplier &lt; 0) walk = false; // we&#39;re snared, dont go into walk mode no matter what<br></td></tr
-><tr
-id=sl_svn4_407
-
-><td class="source">	if ( (walk &amp;&amp; !state_walking) || (!walk &amp;&amp; state_walking) ) {<br></td></tr
-><tr
-id=sl_svn4_408
-
-><td class="source">		MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;run_walk&quot;),1,0);<br></td></tr
-><tr
-id=sl_svn4_409
-
-><td class="source">		MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;run_walk&quot;),0,0);<br></td></tr
-><tr
-id=sl_svn4_410
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_411
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_412
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_413
-
-><td class="source">void DoFwd(bool hold, bool walk) {<br></td></tr
-><tr
-id=sl_svn4_414
-
-><td class="source">	static bool held = false;<br></td></tr
-><tr
-id=sl_svn4_415
-
-><td class="source">	if ( hold ) {<br></td></tr
-><tr
-id=sl_svn4_416
-
-><td class="source">		if( GetCharInfo()-&gt;pSpawn-&gt;CastingData.SpellID != -1 &amp;&amp; !BardClass() ) return;<br></td></tr
-><tr
-id=sl_svn4_417
-
-><td class="source">		DoWalk(walk);<br></td></tr
-><tr
-id=sl_svn4_418
-
-><td class="source">		DoBck(false);<br></td></tr
-><tr
-id=sl_svn4_419
-
-><td class="source">		if (!held) MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;forward&quot;),1,0);<br></td></tr
-><tr
-id=sl_svn4_420
-
-><td class="source">		held = true;<br></td></tr
-><tr
-id=sl_svn4_421
-
-><td class="source">	} else {<br></td></tr
-><tr
-id=sl_svn4_422
-
-><td class="source">		DoWalk(false);<br></td></tr
-><tr
-id=sl_svn4_423
-
-><td class="source">		if (held) MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;forward&quot;),0,0);<br></td></tr
-><tr
-id=sl_svn4_424
-
-><td class="source">		held = false;<br></td></tr
-><tr
-id=sl_svn4_425
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_426
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_427
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_428
-
-><td class="source">void DoBck(bool hold) {<br></td></tr
-><tr
-id=sl_svn4_429
-
-><td class="source">	static bool held = false;<br></td></tr
-><tr
-id=sl_svn4_430
-
-><td class="source">	if( hold ) {<br></td></tr
-><tr
-id=sl_svn4_431
-
-><td class="source">		DoFwd(false);<br></td></tr
-><tr
-id=sl_svn4_432
-
-><td class="source">		if (!held) MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;back&quot;),1,0);<br></td></tr
-><tr
-id=sl_svn4_433
-
-><td class="source">		held = true;<br></td></tr
-><tr
-id=sl_svn4_434
-
-><td class="source">	} else {<br></td></tr
-><tr
-id=sl_svn4_435
-
-><td class="source">		if (held) MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;back&quot;),0,0);<br></td></tr
-><tr
-id=sl_svn4_436
-
-><td class="source">		held = false;<br></td></tr
-><tr
-id=sl_svn4_437
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_438
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_439
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_440
-
-><td class="source">void DoLft(bool hold) {<br></td></tr
-><tr
-id=sl_svn4_441
-
-><td class="source">	static bool held = false;<br></td></tr
-><tr
-id=sl_svn4_442
-
-><td class="source">	if( hold ) {<br></td></tr
-><tr
-id=sl_svn4_443
-
-><td class="source">		DoRgt(false);<br></td></tr
-><tr
-id=sl_svn4_444
-
-><td class="source">		if (!held) MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;strafe_left&quot;),1,0);<br></td></tr
-><tr
-id=sl_svn4_445
-
-><td class="source">		held = true;<br></td></tr
-><tr
-id=sl_svn4_446
-
-><td class="source">	} else {<br></td></tr
-><tr
-id=sl_svn4_447
-
-><td class="source">		if (held) MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;strafe_left&quot;),0,0);<br></td></tr
-><tr
-id=sl_svn4_448
-
-><td class="source">		held = false;<br></td></tr
-><tr
-id=sl_svn4_449
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_450
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_451
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_452
-
-><td class="source">void DoRgt(bool hold) {<br></td></tr
-><tr
-id=sl_svn4_453
-
-><td class="source">	static bool held = false;<br></td></tr
-><tr
-id=sl_svn4_454
-
-><td class="source">	if( hold ) {<br></td></tr
-><tr
-id=sl_svn4_455
-
-><td class="source">		DoLft(false);<br></td></tr
-><tr
-id=sl_svn4_456
-
-><td class="source">		if (!held) MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;strafe_right&quot;),1,0);<br></td></tr
-><tr
-id=sl_svn4_457
-
-><td class="source">		held = true;<br></td></tr
-><tr
-id=sl_svn4_458
-
-><td class="source">	} else {<br></td></tr
-><tr
-id=sl_svn4_459
-
-><td class="source">		if (held) MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;strafe_right&quot;),0,0);<br></td></tr
-><tr
-id=sl_svn4_460
-
-><td class="source">		held = false;<br></td></tr
-><tr
-id=sl_svn4_461
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_462
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_463
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_464
-
-><td class="source">void DoStop() {<br></td></tr
-><tr
-id=sl_svn4_465
-
-><td class="source">	if ( !FollowIdle ) FollowIdle = (long)clock();<br></td></tr
-><tr
-id=sl_svn4_466
-
-><td class="source">	DoBck(true);<br></td></tr
-><tr
-id=sl_svn4_467
-
-><td class="source">	ReleaseKeys();<br></td></tr
-><tr
-id=sl_svn4_468
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_469
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_470
-
-><td class="source">void LookAt(FLOAT X,FLOAT Y,FLOAT Z) {<br></td></tr
-><tr
-id=sl_svn4_471
-
-><td class="source">	gFaceAngle = ( atan2(X - GetCharInfo()-&gt;pSpawn-&gt;X, Y - GetCharInfo()-&gt;pSpawn-&gt;Y)  * 256.0f / PI);<br></td></tr
-><tr
-id=sl_svn4_472
-
-><td class="source">	if (gFaceAngle&gt;=512.0f) gFaceAngle -= 512.0f;<br></td></tr
-><tr
-id=sl_svn4_473
-
-><td class="source">	if (gFaceAngle&lt;0.0f) gFaceAngle += 512.0f;<br></td></tr
-><tr
-id=sl_svn4_474
-
-><td class="source">	((PSPAWNINFO)pCharSpawn)-&gt;Heading = (FLOAT)gFaceAngle;<br></td></tr
-><tr
-id=sl_svn4_475
-
-><td class="source">	gFaceAngle=10000.0f;<br></td></tr
-><tr
-id=sl_svn4_476
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_477
-
-><td class="source">	if (GetCharInfo()-&gt;pSpawn-&gt;UnderWater==5 || GetCharInfo()-&gt;pSpawn-&gt;FeetWet==5) GetCharInfo()-&gt;pSpawn-&gt;CameraAngle = (FLOAT)( atan2(Z - GetCharInfo()-&gt;pSpawn-&gt;Z, (FLOAT)GetDistance(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y, X,Y)) * 256.0f / PI);<br></td></tr
-><tr
-id=sl_svn4_478
-
-><td class="source">	else if (GetCharInfo()-&gt;pSpawn-&gt;Levitate==2) {<br></td></tr
-><tr
-id=sl_svn4_479
-
-><td class="source">		if ( Z &lt; GetCharInfo()-&gt;pSpawn-&gt;Z-5) GetCharInfo()-&gt;pSpawn-&gt;CameraAngle = -45.0f;<br></td></tr
-><tr
-id=sl_svn4_480
-
-><td class="source">		else if ( Z &gt; GetCharInfo()-&gt;pSpawn-&gt;Z+5) GetCharInfo()-&gt;pSpawn-&gt;CameraAngle = 45.0f;<br></td></tr
-><tr
-id=sl_svn4_481
-
-><td class="source">		else GetCharInfo()-&gt;pSpawn-&gt;CameraAngle = 0.0f;<br></td></tr
-><tr
-id=sl_svn4_482
-
-><td class="source">	} else GetCharInfo()-&gt;pSpawn-&gt;CameraAngle = 0.0f;<br></td></tr
-><tr
-id=sl_svn4_483
-
-><td class="source">	gLookAngle=10000.0f;<br></td></tr
-><tr
-id=sl_svn4_484
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_485
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_486
-
-><td class="source">VOID ClearAll() {<br></td></tr
-><tr
-id=sl_svn4_487
-
-><td class="source">	if( MonitorID || FollowPath.size() ) WriteChatf(&quot;[MQ2AdvPath] Stopped&quot;);<br></td></tr
-><tr
-id=sl_svn4_488
-
-><td class="source">	FollowPath.clear();<br></td></tr
-><tr
-id=sl_svn4_489
-
-><td class="source">	NextClickDoor = PauseDoor = FollowIdle = MonitorID = 0;<br></td></tr
-><tr
-id=sl_svn4_490
-
-><td class="source">	DoStop();<br></td></tr
-><tr
-id=sl_svn4_491
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_492
-
-><td class="source">	FollowState = FOLLOW_OFF;		// Active?<br></td></tr
-><tr
-id=sl_svn4_493
-
-><td class="source">	StatusState = STATUS_OFF;		// Active?<br></td></tr
-><tr
-id=sl_svn4_494
-
-><td class="source">	MonitorWarp = PlayReverse = PlayLoop = false;<br></td></tr
-><tr
-id=sl_svn4_495
-
-><td class="source">	MonitorZoneID = 0;<br></td></tr
-><tr
-id=sl_svn4_496
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_497
-
-><td class="source">	AutoOpenDoor = true;<br></td></tr
-><tr
-id=sl_svn4_498
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_499
-
-><td class="source">	SavePathZone[0] = NULL;<br></td></tr
-><tr
-id=sl_svn4_500
-
-><td class="source">	SavePathName[0] = NULL;<br></td></tr
-><tr
-id=sl_svn4_501
-
-><td class="source">	PathNameZone[0] = NULL;<br></td></tr
-><tr
-id=sl_svn4_502
-
-><td class="source">	SpawnNameZone[0] = NULL;<br></td></tr
-><tr
-id=sl_svn4_503
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_504
-
-><td class="source">	MapClear();<br></td></tr
-><tr
-id=sl_svn4_505
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_506
-
-><td class="source">	StuckCheck(true);<br></td></tr
-><tr
-id=sl_svn4_507
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_508
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_509
-
-><td class="source">VOID ClearOne(list&lt;Position&gt;::iterator &amp;CurList) {<br></td></tr
-><tr
-id=sl_svn4_510
-
-><td class="source">	list&lt;Position&gt;::iterator PosList;<br></td></tr
-><tr
-id=sl_svn4_511
-
-><td class="source">	PosList=CurList;<br></td></tr
-><tr
-id=sl_svn4_512
-
-><td class="source">	CurList++;<br></td></tr
-><tr
-id=sl_svn4_513
-
-><td class="source">	FollowPath.erase(PosList);<br></td></tr
-><tr
-id=sl_svn4_514
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_515
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_516
-
-><td class="source">void CreateBinds() {<br></td></tr
-><tr
-id=sl_svn4_517
-
-><td class="source">	if(!gbInZone || !GetCharInfo() || !GetCharInfo()-&gt;pSpawn || MoveBindsLoaded) return;<br></td></tr
-><tr
-id=sl_svn4_518
-
-><td class="source">	MoveBindsLoaded = true;<br></td></tr
-><tr
-id=sl_svn4_519
-
-><td class="source">	AddMQ2KeyBind(&quot;STOP_BCK&quot;,MQCheckFollowCommand); <br></td></tr
-><tr
-id=sl_svn4_520
-
-><td class="source">	AddMQ2KeyBind(&quot;STOP_LFT&quot;,MQCheckFollowCommand); <br></td></tr
-><tr
-id=sl_svn4_521
-
-><td class="source">	AddMQ2KeyBind(&quot;STOP_RGT&quot;,MQCheckFollowCommand); <br></td></tr
-><tr
-id=sl_svn4_522
-
-><td class="source">	AddMQ2KeyBind(&quot;STOP_STRAFE_LFT&quot;,MQCheckFollowCommand); <br></td></tr
-><tr
-id=sl_svn4_523
-
-><td class="source">	AddMQ2KeyBind(&quot;STOP_STRAFE_RGT&quot;,MQCheckFollowCommand); <br></td></tr
-><tr
-id=sl_svn4_524
-
-><td class="source">	SetMQ2KeyBind(&quot;STOP_BCK&quot;,false,pKeypressHandler-&gt;NormalKey[FindMappableCommand(&quot;back&quot;)]); <br></td></tr
-><tr
-id=sl_svn4_525
-
-><td class="source">	SetMQ2KeyBind(&quot;STOP_BCK&quot;,true,pKeypressHandler-&gt;AltKey[FindMappableCommand(&quot;back&quot;)]); <br></td></tr
-><tr
-id=sl_svn4_526
-
-><td class="source">	SetMQ2KeyBind(&quot;STOP_LFT&quot;,false,pKeypressHandler-&gt;NormalKey[FindMappableCommand(&quot;left&quot;)]); <br></td></tr
-><tr
-id=sl_svn4_527
-
-><td class="source">	SetMQ2KeyBind(&quot;STOP_LFT&quot;,true,pKeypressHandler-&gt;AltKey[FindMappableCommand(&quot;left&quot;)]); <br></td></tr
-><tr
-id=sl_svn4_528
-
-><td class="source">	SetMQ2KeyBind(&quot;STOP_RGT&quot;,false,pKeypressHandler-&gt;NormalKey[FindMappableCommand(&quot;right&quot;)]); <br></td></tr
-><tr
-id=sl_svn4_529
-
-><td class="source">	SetMQ2KeyBind(&quot;STOP_RGT&quot;,true,pKeypressHandler-&gt;AltKey[FindMappableCommand(&quot;right&quot;)]); <br></td></tr
-><tr
-id=sl_svn4_530
-
-><td class="source">	SetMQ2KeyBind(&quot;STOP_STRAFE_LFT&quot;,false,pKeypressHandler-&gt;NormalKey[FindMappableCommand(&quot;strafe_left&quot;)]); <br></td></tr
-><tr
-id=sl_svn4_531
-
-><td class="source">	SetMQ2KeyBind(&quot;STOP_STRAFE_LFT&quot;,true,pKeypressHandler-&gt;AltKey[FindMappableCommand(&quot;strafe_left&quot;)]); <br></td></tr
-><tr
-id=sl_svn4_532
-
-><td class="source">	SetMQ2KeyBind(&quot;STOP_STRAFE_RGT&quot;,false,pKeypressHandler-&gt;NormalKey[FindMappableCommand(&quot;strafe_right&quot;)]); <br></td></tr
-><tr
-id=sl_svn4_533
-
-><td class="source">	SetMQ2KeyBind(&quot;STOP_STRAFE_RGT&quot;,true,pKeypressHandler-&gt;AltKey[FindMappableCommand(&quot;strafe_right&quot;)]); <br></td></tr
-><tr
-id=sl_svn4_534
-
-><td class="source">} <br></td></tr
-><tr
-id=sl_svn4_535
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_536
-
-><td class="source">void DestroyBinds() {<br></td></tr
-><tr
-id=sl_svn4_537
-
-><td class="source">	if (!MoveBindsLoaded) return;<br></td></tr
-><tr
-id=sl_svn4_538
-
-><td class="source">	RemoveMQ2KeyBind(&quot;STOP_BCK&quot;); <br></td></tr
-><tr
-id=sl_svn4_539
-
-><td class="source">	RemoveMQ2KeyBind(&quot;STOP_LFT&quot;); <br></td></tr
-><tr
-id=sl_svn4_540
-
-><td class="source">	RemoveMQ2KeyBind(&quot;STOP_RGT&quot;); <br></td></tr
-><tr
-id=sl_svn4_541
-
-><td class="source">	RemoveMQ2KeyBind(&quot;STOP_STRAFE_LFT&quot;); <br></td></tr
-><tr
-id=sl_svn4_542
-
-><td class="source">	RemoveMQ2KeyBind(&quot;STOP_STRAFE_RGT&quot;); <br></td></tr
-><tr
-id=sl_svn4_543
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_544
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_545
-
-><td class="source">VOID AddWaypoint(long SpawnID,bool Warping) {<br></td></tr
-><tr
-id=sl_svn4_546
-
-><td class="source">	if( PSPAWNINFO pSpawn = (PSPAWNINFO)GetSpawnByID(SpawnID) ) {<br></td></tr
-><tr
-id=sl_svn4_547
-
-><td class="source">		Position MonitorPosition;<br></td></tr
-><tr
-id=sl_svn4_548
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_549
-
-><td class="source">		MonitorPosition.Warping = Warping;<br></td></tr
-><tr
-id=sl_svn4_550
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_551
-
-><td class="source">		MonitorPosition.X = MonitorX = pSpawn-&gt;X;<br></td></tr
-><tr
-id=sl_svn4_552
-
-><td class="source">		MonitorPosition.Y = MonitorY = pSpawn-&gt;Y;<br></td></tr
-><tr
-id=sl_svn4_553
-
-><td class="source">		MonitorPosition.Z = MonitorZ = pSpawn-&gt;Z;<br></td></tr
-><tr
-id=sl_svn4_554
-
-><td class="source">		MonitorPosition.Heading = MonitorHeading = pSpawn-&gt;Heading;<br></td></tr
-><tr
-id=sl_svn4_555
-
-><td class="source">		strcpy(MonitorPosition.CheckPoint,&quot;&quot;);<br></td></tr
-><tr
-id=sl_svn4_556
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_557
-
-><td class="source">		FollowPath.push_back(MonitorPosition);<br></td></tr
-><tr
-id=sl_svn4_558
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_559
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_560
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_561
-
-><td class="source">PDOOR ClosestDoor() {<br></td></tr
-><tr
-id=sl_svn4_562
-
-><td class="source">	PDOORTABLE pDoorTable = (PDOORTABLE)pSwitchMgr;<br></td></tr
-><tr
-id=sl_svn4_563
-
-><td class="source">	FLOAT Distance = 100000.00;<br></td></tr
-><tr
-id=sl_svn4_564
-
-><td class="source">	PDOOR pDoor = NULL;<br></td></tr
-><tr
-id=sl_svn4_565
-
-><td class="source">	for (DWORD Count=0; Count&lt;pDoorTable-&gt;NumEntries; Count++) {<br></td></tr
-><tr
-id=sl_svn4_566
-
-><td class="source">		if( Distance &gt; GetDistance3D(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,GetCharInfo()-&gt;pSpawn-&gt;Z,pDoorTable-&gt;pDoor[Count]-&gt;DefaultX,pDoorTable-&gt;pDoor[Count]-&gt;DefaultY,pDoorTable-&gt;pDoor[Count]-&gt;DefaultZ) ) {<br></td></tr
-><tr
-id=sl_svn4_567
-
-><td class="source">			Distance = GetDistance3D(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,GetCharInfo()-&gt;pSpawn-&gt;Z,pDoorTable-&gt;pDoor[Count]-&gt;DefaultX,pDoorTable-&gt;pDoor[Count]-&gt;DefaultY,pDoorTable-&gt;pDoor[Count]-&gt;DefaultZ);<br></td></tr
-><tr
-id=sl_svn4_568
-
-><td class="source">			pDoor = pDoorTable-&gt;pDoor[Count];<br></td></tr
-><tr
-id=sl_svn4_569
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_570
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_571
-
-><td class="source">	return pDoor;<br></td></tr
-><tr
-id=sl_svn4_572
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_573
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_574
-
-><td class="source">bool IsOpenDoor( PDOOR pDoor ) {<br></td></tr
-><tr
-id=sl_svn4_575
-
-><td class="source">	if(pDoor-&gt;DefaultHeading!=pDoor-&gt;Heading || pDoor-&gt;Y!=pDoor-&gt;DefaultY || pDoor-&gt;X!=pDoor-&gt;DefaultX  || pDoor-&gt;Z!=pDoor-&gt;DefaultZ )return true;<br></td></tr
-><tr
-id=sl_svn4_576
-
-><td class="source">	return false;<br></td></tr
-><tr
-id=sl_svn4_577
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_578
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_579
-
-><td class="source">VOID OpenDoor() {<br></td></tr
-><tr
-id=sl_svn4_580
-
-><td class="source">	if(!AutoOpenDoor) return;<br></td></tr
-><tr
-id=sl_svn4_581
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_582
-
-><td class="source">	if(PDOOR pDoor = (PDOOR)ClosestDoor()) {<br></td></tr
-><tr
-id=sl_svn4_583
-
-><td class="source">		if(!IsOpenDoor(pDoor) &amp;&amp; NextClickDoor &lt; (long)clock()) {<br></td></tr
-><tr
-id=sl_svn4_584
-
-><td class="source">			if( GetDistance3D(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,GetCharInfo()-&gt;pSpawn-&gt;Z,pDoor-&gt;DefaultX,pDoor-&gt;DefaultY,pDoor-&gt;DefaultZ) &lt;  DISTANCE_OPEN_DOOR_CLOSE ) {<br></td></tr
-><tr
-id=sl_svn4_585
-
-><td class="source">				if( InFront(pDoor-&gt;X,pDoor-&gt;Y, ANGEL_OPEN_DOOR_CLOSE,false) ) {<br></td></tr
-><tr
-id=sl_svn4_586
-
-><td class="source">					DoOpenDoor = true;<br></td></tr
-><tr
-id=sl_svn4_587
-
-><td class="source">					NextClickDoor = (long)clock() + 100;<br></td></tr
-><tr
-id=sl_svn4_588
-
-><td class="source">					if ((PauseDoor - (long)clock()) &lt; 0) {<br></td></tr
-><tr
-id=sl_svn4_589
-
-><td class="source">						PauseDoor = (long)clock() + 1000;<br></td></tr
-><tr
-id=sl_svn4_590
-
-><td class="source">						DoStop();<br></td></tr
-><tr
-id=sl_svn4_591
-
-><td class="source">					}<br></td></tr
-><tr
-id=sl_svn4_592
-
-><td class="source">				}<br></td></tr
-><tr
-id=sl_svn4_593
-
-><td class="source">			} else if( GetDistance3D(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,GetCharInfo()-&gt;pSpawn-&gt;Z,pDoor-&gt;DefaultX,pDoor-&gt;DefaultY,pDoor-&gt;DefaultZ) &lt;  DISTANCE_OPEN_DOOR_LONG ) {<br></td></tr
-><tr
-id=sl_svn4_594
-
-><td class="source">				if( InFront(pDoor-&gt;X,pDoor-&gt;Y, ANGEL_OPEN_DOOR_LONG,false) ) {<br></td></tr
-><tr
-id=sl_svn4_595
-
-><td class="source">					DoOpenDoor = true;<br></td></tr
-><tr
-id=sl_svn4_596
-
-><td class="source">					NextClickDoor = (long)clock() + 100;<br></td></tr
-><tr
-id=sl_svn4_597
-
-><td class="source">				}<br></td></tr
-><tr
-id=sl_svn4_598
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_599
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_600
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_601
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_602
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_603
-
-><td class="source">bool InFront(float X,float Y, float Angel, bool Reverse) {<br></td></tr
-><tr
-id=sl_svn4_604
-
-><td class="source">	FLOAT Angle = (FLOAT)((atan2f(X - GetCharInfo()-&gt;pSpawn-&gt;X, Y - GetCharInfo()-&gt;pSpawn-&gt;Y) * 180.0f / PI));<br></td></tr
-><tr
-id=sl_svn4_605
-
-><td class="source">	if(Angle&lt;0)	Angle +=360;<br></td></tr
-><tr
-id=sl_svn4_606
-
-><td class="source">	Angle = Angle*1.42f;<br></td></tr
-><tr
-id=sl_svn4_607
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_608
-
-><td class="source">	if(Reverse) {<br></td></tr
-><tr
-id=sl_svn4_609
-
-><td class="source">		if( Angle + 256 &gt; 512 ) {<br></td></tr
-><tr
-id=sl_svn4_610
-
-><td class="source">			Angle = Angle-256;<br></td></tr
-><tr
-id=sl_svn4_611
-
-><td class="source">		} else if( Angle - 256 &lt; 0 ) {<br></td></tr
-><tr
-id=sl_svn4_612
-
-><td class="source">			Angle = Angle+256;<br></td></tr
-><tr
-id=sl_svn4_613
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_614
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_615
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_616
-
-><td class="source">	bool Low = false;<br></td></tr
-><tr
-id=sl_svn4_617
-
-><td class="source">	bool High = false;<br></td></tr
-><tr
-id=sl_svn4_618
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_619
-
-><td class="source">	FLOAT Angle1 = GetCharInfo()-&gt;pSpawn-&gt;Heading - Angel;<br></td></tr
-><tr
-id=sl_svn4_620
-
-><td class="source">	if(Angle1&lt;0) {<br></td></tr
-><tr
-id=sl_svn4_621
-
-><td class="source">		Low = true;<br></td></tr
-><tr
-id=sl_svn4_622
-
-><td class="source">		Angle1 +=512.0f;<br></td></tr
-><tr
-id=sl_svn4_623
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_624
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_625
-
-><td class="source">	FLOAT Angle2 = GetCharInfo()-&gt;pSpawn-&gt;Heading + Angel;<br></td></tr
-><tr
-id=sl_svn4_626
-
-><td class="source">	if(Angle2&gt;512.0f) {<br></td></tr
-><tr
-id=sl_svn4_627
-
-><td class="source">		High = true;<br></td></tr
-><tr
-id=sl_svn4_628
-
-><td class="source">		Angle2 -=512.0f;<br></td></tr
-><tr
-id=sl_svn4_629
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_630
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_631
-
-><td class="source">	if( Low ) {<br></td></tr
-><tr
-id=sl_svn4_632
-
-><td class="source">		if( Angle1 &lt; (Angle + 512.0f) &amp;&amp; Angle2 &gt; Angle ) return true;<br></td></tr
-><tr
-id=sl_svn4_633
-
-><td class="source">	} else if( High ) {<br></td></tr
-><tr
-id=sl_svn4_634
-
-><td class="source">		if( Angle1 &lt; Angle &amp;&amp; Angle2 &gt; (Angle - 512.0f) ) return true;<br></td></tr
-><tr
-id=sl_svn4_635
-
-><td class="source">	} else if( Angle1 &lt; Angle &amp;&amp; Angle2 &gt; Angle ) {<br></td></tr
-><tr
-id=sl_svn4_636
-
-><td class="source">		return true;<br></td></tr
-><tr
-id=sl_svn4_637
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_638
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_639
-
-><td class="source">//	if( Angle1 &lt; Angle &amp;&amp; Angle2 &gt; Angle ) return true;<br></td></tr
-><tr
-id=sl_svn4_640
-
-><td class="source">	return false;<br></td></tr
-><tr
-id=sl_svn4_641
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_642
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_643
-
-><td class="source">VOID SavePath( PCHAR PathName, PCHAR PathZone, bool SaveAll ) {<br></td></tr
-><tr
-id=sl_svn4_644
-
-><td class="source">	WriteChatf(&quot;[MQ2AdvPath] Saveing Path: %s Zone: %s&quot;,PathName,PathZone);<br></td></tr
-><tr
-id=sl_svn4_645
-
-><td class="source">	CHAR INIFileNameTemp[400];<br></td></tr
-><tr
-id=sl_svn4_646
-
-><td class="source">	char szTemp[MAX_STRING];<br></td></tr
-><tr
-id=sl_svn4_647
-
-><td class="source">	char szTemp2[MAX_STRING];<br></td></tr
-><tr
-id=sl_svn4_648
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_649
-
-><td class="source">	if( !SaveAll ) {<br></td></tr
-><tr
-id=sl_svn4_650
-
-><td class="source">		unsigned long thisWaypoint = 0;<br></td></tr
-><tr
-id=sl_svn4_651
-
-><td class="source">		float lastHeading = 0;<br></td></tr
-><tr
-id=sl_svn4_652
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_653
-
-><td class="source">		unsigned long DeleteWaypoint = 0;<br></td></tr
-><tr
-id=sl_svn4_654
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_655
-
-><td class="source">		list&lt;Position&gt;::iterator CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_656
-
-><td class="source">		list&lt;Position&gt;::iterator EndList=FollowPath.end();<br></td></tr
-><tr
-id=sl_svn4_657
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_658
-
-><td class="source">		while(CurList!=EndList) {<br></td></tr
-><tr
-id=sl_svn4_659
-
-><td class="source">			thisWaypoint++;<br></td></tr
-><tr
-id=sl_svn4_660
-
-><td class="source">			 if( FollowPath.size() == thisWaypoint &amp;&amp; CurList-&gt;Warping ) {<br></td></tr
-><tr
-id=sl_svn4_661
-
-><td class="source">				ClearOne(CurList);<br></td></tr
-><tr
-id=sl_svn4_662
-
-><td class="source">				break;<br></td></tr
-><tr
-id=sl_svn4_663
-
-><td class="source">			} else if( lastHeading == CurList-&gt;Heading &amp;&amp; thisWaypoint &gt; 2 &amp;&amp; !CurList-&gt;Warping &amp;&amp; !CurList-&gt;CheckPoint[0] ) {<br></td></tr
-><tr
-id=sl_svn4_664
-
-><td class="source">				DeleteWaypoint = thisWaypoint - 1;<br></td></tr
-><tr
-id=sl_svn4_665
-
-><td class="source">				CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_666
-
-><td class="source">				thisWaypoint = 0;<br></td></tr
-><tr
-id=sl_svn4_667
-
-><td class="source">			} else if( DeleteWaypoint == thisWaypoint ) {<br></td></tr
-><tr
-id=sl_svn4_668
-
-><td class="source">				ClearOne(CurList);<br></td></tr
-><tr
-id=sl_svn4_669
-
-><td class="source">				CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_670
-
-><td class="source">				thisWaypoint = 0;<br></td></tr
-><tr
-id=sl_svn4_671
-
-><td class="source">				DeleteWaypoint = 0;<br></td></tr
-><tr
-id=sl_svn4_672
-
-><td class="source">			} else {<br></td></tr
-><tr
-id=sl_svn4_673
-
-><td class="source">				lastHeading = CurList-&gt;Heading;<br></td></tr
-><tr
-id=sl_svn4_674
-
-><td class="source">				CurList++;<br></td></tr
-><tr
-id=sl_svn4_675
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_676
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_677
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_678
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_679
-
-><td class="source">	sprintf(INIFileNameTemp,&quot;%s\\%s\\%s.ini&quot;,gszINIPath,&quot;MQ2AdvPath&quot;,PathZone);<br></td></tr
-><tr
-id=sl_svn4_680
-
-><td class="source">	if( FollowPath.size() ) {<br></td></tr
-><tr
-id=sl_svn4_681
-
-><td class="source">		WritePrivateProfileString(PathName,NULL,      NULL,INIFileNameTemp);<br></td></tr
-><tr
-id=sl_svn4_682
-
-><td class="source">		int i = 1;<br></td></tr
-><tr
-id=sl_svn4_683
-
-><td class="source">		list&lt;Position&gt;::iterator CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_684
-
-><td class="source">		list&lt;Position&gt;::iterator EndList=FollowPath.end();<br></td></tr
-><tr
-id=sl_svn4_685
-
-><td class="source">		while(CurList!=EndList) {<br></td></tr
-><tr
-id=sl_svn4_686
-
-><td class="source">			sprintf(szTemp2,&quot;%d&quot;,i);<br></td></tr
-><tr
-id=sl_svn4_687
-
-><td class="source">			sprintf(szTemp,&quot;%.2f %.2f %.2f %s&quot;,CurList-&gt;Y,CurList-&gt;X,CurList-&gt;Z,CurList-&gt;CheckPoint);<br></td></tr
-><tr
-id=sl_svn4_688
-
-><td class="source">			WritePrivateProfileString(PathName,szTemp2,      szTemp,INIFileNameTemp);<br></td></tr
-><tr
-id=sl_svn4_689
-
-><td class="source">			i++;<br></td></tr
-><tr
-id=sl_svn4_690
-
-><td class="source">			CurList++;<br></td></tr
-><tr
-id=sl_svn4_691
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_692
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_693
-
-><td class="source">	ClearAll();<br></td></tr
-><tr
-id=sl_svn4_694
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_695
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_696
-
-><td class="source">bool LoadPath( PCHAR PathName ) {<br></td></tr
-><tr
-id=sl_svn4_697
-
-><td class="source">	FollowPath.clear();<br></td></tr
-><tr
-id=sl_svn4_698
-
-><td class="source">	CHAR INIFileNameTemp[400];<br></td></tr
-><tr
-id=sl_svn4_699
-
-><td class="source">	sprintf(INIFileNameTemp,&quot;%s\\%s\\%s.ini&quot;,gszINIPath,&quot;MQ2AdvPath&quot;,GetShortZone(GetCharInfo()-&gt;zoneId));<br></td></tr
-><tr
-id=sl_svn4_700
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_701
-
-><td class="source">	int i = 1;<br></td></tr
-><tr
-id=sl_svn4_702
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_703
-
-><td class="source">	char szTemp[MAX_STRING] = {0};<br></td></tr
-><tr
-id=sl_svn4_704
-
-><td class="source">	char szTemp3[MAX_STRING] = {0};<br></td></tr
-><tr
-id=sl_svn4_705
-
-><td class="source">	do {<br></td></tr
-><tr
-id=sl_svn4_706
-
-><td class="source">		char szTemp2[MAX_STRING] = {0};<br></td></tr
-><tr
-id=sl_svn4_707
-
-><td class="source">		char szTemp3[MAX_STRING] = {0};<br></td></tr
-><tr
-id=sl_svn4_708
-
-><td class="source">		sprintf(szTemp,&quot;%d&quot;,i);<br></td></tr
-><tr
-id=sl_svn4_709
-
-><td class="source">		GetPrivateProfileString(PathName,szTemp,NULL,szTemp2,MAX_STRING,INIFileNameTemp);<br></td></tr
-><tr
-id=sl_svn4_710
-
-><td class="source">		if( szTemp2[0]==0 ) break;<br></td></tr
-><tr
-id=sl_svn4_711
-
-><td class="source">		Position TempPosition;<br></td></tr
-><tr
-id=sl_svn4_712
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_713
-
-><td class="source">		GetArg(szTemp3,szTemp2,1);<br></td></tr
-><tr
-id=sl_svn4_714
-
-><td class="source">			TempPosition.Y = (FLOAT)atof(szTemp3);<br></td></tr
-><tr
-id=sl_svn4_715
-
-><td class="source">		GetArg(szTemp3,szTemp2,2);<br></td></tr
-><tr
-id=sl_svn4_716
-
-><td class="source">			TempPosition.X = (FLOAT)atof(szTemp3);<br></td></tr
-><tr
-id=sl_svn4_717
-
-><td class="source">		GetArg(szTemp3,szTemp2,3);<br></td></tr
-><tr
-id=sl_svn4_718
-
-><td class="source">			TempPosition.Z = (FLOAT)atof(szTemp3);<br></td></tr
-><tr
-id=sl_svn4_719
-
-><td class="source">		GetArg(szTemp3,szTemp2,4);<br></td></tr
-><tr
-id=sl_svn4_720
-
-><td class="source">			strcpy(TempPosition.CheckPoint,szTemp3);<br></td></tr
-><tr
-id=sl_svn4_721
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_722
-
-><td class="source">		TempPosition.Heading = 0;<br></td></tr
-><tr
-id=sl_svn4_723
-
-><td class="source">		TempPosition.Warping = 0;<br></td></tr
-><tr
-id=sl_svn4_724
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_725
-
-><td class="source">		FollowPath.push_back(TempPosition);<br></td></tr
-><tr
-id=sl_svn4_726
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_727
-
-><td class="source">		i++;<br></td></tr
-><tr
-id=sl_svn4_728
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_729
-
-><td class="source">	while(true);<br></td></tr
-><tr
-id=sl_svn4_730
-
-><td class="source">	return FollowPath.size()?true:false;<br></td></tr
-><tr
-id=sl_svn4_731
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_732
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_733
-
-><td class="source">VOID FollowSpawn() {<br></td></tr
-><tr
-id=sl_svn4_734
-
-><td class="source">	if( FollowPath.size() ) {<br></td></tr
-><tr
-id=sl_svn4_735
-
-><td class="source">		if( GetDistance3D(MeMonitorX,MeMonitorY,MeMonitorZ,GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,GetCharInfo()-&gt;pSpawn-&gt;Z) &gt; 50 ) {<br></td></tr
-><tr
-id=sl_svn4_736
-
-><td class="source">			list&lt;Position&gt;::iterator CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_737
-
-><td class="source">			list&lt;Position&gt;::iterator EndList=FollowPath.end();<br></td></tr
-><tr
-id=sl_svn4_738
-
-><td class="source">			do{<br></td></tr
-><tr
-id=sl_svn4_739
-
-><td class="source">				if(CurList == EndList ) break;<br></td></tr
-><tr
-id=sl_svn4_740
-
-><td class="source">				if(CurList-&gt;Warping) break;<br></td></tr
-><tr
-id=sl_svn4_741
-
-><td class="source">				ClearOne(CurList);<br></td></tr
-><tr
-id=sl_svn4_742
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_743
-
-><td class="source">			while(true);<br></td></tr
-><tr
-id=sl_svn4_744
-
-><td class="source">			WriteChatf(&quot;[MQ2AdvPath] Warping Detected on SELF&quot;);<br></td></tr
-><tr
-id=sl_svn4_745
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_746
-
-><td class="source">		if( !FollowPath.size() ) return;<br></td></tr
-><tr
-id=sl_svn4_747
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_748
-
-><td class="source">		list&lt;Position&gt;::iterator CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_749
-
-><td class="source">		list&lt;Position&gt;::iterator EndList=FollowPath.end();<br></td></tr
-><tr
-id=sl_svn4_750
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_751
-
-><td class="source">		HWND EQhWnd=*(HWND*)EQADDR_HWND;<br></td></tr
-><tr
-id=sl_svn4_752
-
-><td class="source">		if (EQW_GetDisplayWindow) EQhWnd=EQW_GetDisplayWindow();<br></td></tr
-><tr
-id=sl_svn4_753
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_754
-
-><td class="source">		bool run = false;<br></td></tr
-><tr
-id=sl_svn4_755
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_756
-
-><td class="source">		if( CurList-&gt;Warping &amp;&amp; GetDistance3D(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,GetCharInfo()-&gt;pSpawn-&gt;Z,CurList-&gt;X,CurList-&gt;Y,CurList-&gt;Z) &gt; 50 ) {<br></td></tr
-><tr
-id=sl_svn4_757
-
-><td class="source">			if ( !MonitorWarp ) {<br></td></tr
-><tr
-id=sl_svn4_758
-
-><td class="source">				WriteChatf(&quot;[MQ2AdvPath] Warping Wating&quot;);<br></td></tr
-><tr
-id=sl_svn4_759
-
-><td class="source">				DoStop();<br></td></tr
-><tr
-id=sl_svn4_760
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_761
-
-><td class="source">			MonitorWarp = true;<br></td></tr
-><tr
-id=sl_svn4_762
-
-><td class="source">			return;<br></td></tr
-><tr
-id=sl_svn4_763
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_764
-
-><td class="source">		MonitorWarp = false;<br></td></tr
-><tr
-id=sl_svn4_765
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_766
-
-><td class="source">		if(PSPAWNINFO pSpawn = (PSPAWNINFO)GetSpawnByID(MonitorID)) {<br></td></tr
-><tr
-id=sl_svn4_767
-
-><td class="source">			if( GetDistance3D(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,GetCharInfo()-&gt;pSpawn-&gt;Z,pSpawn-&gt;X,pSpawn-&gt;Y,pSpawn-&gt;Z) &gt;= 50 ) run = true;<br></td></tr
-><tr
-id=sl_svn4_768
-
-><td class="source">			if( GetDistance3D(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,GetCharInfo()-&gt;pSpawn-&gt;Z,pSpawn-&gt;X,pSpawn-&gt;Y,pSpawn-&gt;Z) &lt;= FollowSpawnDistance ) {<br></td></tr
-><tr
-id=sl_svn4_769
-
-><td class="source">				DoStop();<br></td></tr
-><tr
-id=sl_svn4_770
-
-><td class="source">				return;<br></td></tr
-><tr
-id=sl_svn4_771
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_772
-
-><td class="source">		} else if( (FollowPath.size()*DISTANCE_BETWEN_LOG) &gt;= 20 ) run = true;<br></td></tr
-><tr
-id=sl_svn4_773
-
-><td class="source">//		 else if( GetDistance3D(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,GetCharInfo()-&gt;pSpawn-&gt;Z,CurList-&gt;X,CurList-&gt;Y,CurList-&gt;Z) &gt;= 20 ) run = true;<br></td></tr
-><tr
-id=sl_svn4_774
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_775
-
-><td class="source">//		if( ( GetForegroundWindow()==EQhWnd &amp;&amp; GetDistance(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,CurList-&gt;X,CurList-&gt;Y) &gt; DISTANCE_BETWEN_LOG ) || ( GetForegroundWindow()!=EQhWnd &amp;&amp; GetDistance(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,CurList-&gt;X,CurList-&gt;Y) &gt; (DISTANCE_BETWEN_LOG+10) ) ) {<br></td></tr
-><tr
-id=sl_svn4_776
-
-><td class="source">		if( GetDistance(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,CurList-&gt;X,CurList-&gt;Y) &gt; DISTANCE_BETWEN_LOG+DistanceMod ) {<br></td></tr
-><tr
-id=sl_svn4_777
-
-><td class="source">			LookAt(CurList-&gt;X,CurList-&gt;Y,CurList-&gt;Z);<br></td></tr
-><tr
-id=sl_svn4_778
-
-><td class="source">			if( (PauseDoor - (long)clock()) &lt; 300 ) {<br></td></tr
-><tr
-id=sl_svn4_779
-
-><td class="source">				if ( run ) DoFwd(true);<br></td></tr
-><tr
-id=sl_svn4_780
-
-><td class="source">				else DoFwd(true,true);<br></td></tr
-><tr
-id=sl_svn4_781
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_782
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_783
-
-><td class="source">			OpenDoor();<br></td></tr
-><tr
-id=sl_svn4_784
-
-><td class="source">			FollowIdle = 0;<br></td></tr
-><tr
-id=sl_svn4_785
-
-><td class="source">		} else {<br></td></tr
-><tr
-id=sl_svn4_786
-
-><td class="source">				ClearOne(CurList);<br></td></tr
-><tr
-id=sl_svn4_787
-
-><td class="source">				if( CurList != EndList ) {<br></td></tr
-><tr
-id=sl_svn4_788
-
-><td class="source">					if(CurList-&gt;Warping) return;<br></td></tr
-><tr
-id=sl_svn4_789
-
-><td class="source">					// Clean up lag<br></td></tr
-><tr
-id=sl_svn4_790
-
-><td class="source">					ClearLag();<br></td></tr
-><tr
-id=sl_svn4_791
-
-><td class="source">				} else {<br></td></tr
-><tr
-id=sl_svn4_792
-
-><td class="source">					DoStop();<br></td></tr
-><tr
-id=sl_svn4_793
-
-><td class="source">					if( !MonitorID ) {<br></td></tr
-><tr
-id=sl_svn4_794
-
-><td class="source">						DoOpenDoor = true;<br></td></tr
-><tr
-id=sl_svn4_795
-
-><td class="source">						ClearAll();<br></td></tr
-><tr
-id=sl_svn4_796
-
-><td class="source">					}<br></td></tr
-><tr
-id=sl_svn4_797
-
-><td class="source">				}<br></td></tr
-><tr
-id=sl_svn4_798
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_799
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_800
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_801
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_802
-
-><td class="source">VOID FollowWaypointsInit(float smart) {<br></td></tr
-><tr
-id=sl_svn4_803
-
-><td class="source">	if(smart) {<br></td></tr
-><tr
-id=sl_svn4_804
-
-><td class="source">		list&lt;Position&gt;::iterator CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_805
-
-><td class="source">		list&lt;Position&gt;::iterator EndList=FollowPath.end();<br></td></tr
-><tr
-id=sl_svn4_806
-
-><td class="source">		int i = 1;<br></td></tr
-><tr
-id=sl_svn4_807
-
-><td class="source">		while(CurList!=EndList) {			<br></td></tr
-><tr
-id=sl_svn4_808
-
-><td class="source">			if( GetDistance3D(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,GetCharInfo()-&gt;pSpawn-&gt;Z,CurList-&gt;X,CurList-&gt;Y,CurList-&gt;Z) &lt; smart ) {<br></td></tr
-><tr
-id=sl_svn4_809
-
-><td class="source">				smart = GetDistance3D(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,GetCharInfo()-&gt;pSpawn-&gt;Z,CurList-&gt;X,CurList-&gt;Y,CurList-&gt;Z);<br></td></tr
-><tr
-id=sl_svn4_810
-
-><td class="source">				PlayWaypoint = i;<br></td></tr
-><tr
-id=sl_svn4_811
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_812
-
-><td class="source">			i++;<br></td></tr
-><tr
-id=sl_svn4_813
-
-><td class="source">			CurList++;<br></td></tr
-><tr
-id=sl_svn4_814
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_815
-
-><td class="source">	} else {<br></td></tr
-><tr
-id=sl_svn4_816
-
-><td class="source">		if(PlayReverse) PlayWaypoint = FollowPath.size();<br></td></tr
-><tr
-id=sl_svn4_817
-
-><td class="source">		else PlayWaypoint = 1;<br></td></tr
-><tr
-id=sl_svn4_818
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_819
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_820
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_821
-
-><td class="source">VOID FollowWaypoints() {<br></td></tr
-><tr
-id=sl_svn4_822
-
-><td class="source">	if( FollowPath.size() ) {<br></td></tr
-><tr
-id=sl_svn4_823
-
-><td class="source">		list&lt;Position&gt;::iterator CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_824
-
-><td class="source">		list&lt;Position&gt;::iterator EndList=FollowPath.end();<br></td></tr
-><tr
-id=sl_svn4_825
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_826
-
-><td class="source">		HWND EQhWnd=*(HWND*)EQADDR_HWND;<br></td></tr
-><tr
-id=sl_svn4_827
-
-><td class="source">		if (EQW_GetDisplayWindow) EQhWnd=EQW_GetDisplayWindow(); <br></td></tr
-><tr
-id=sl_svn4_828
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_829
-
-><td class="source">		long WaypointIndex=1;<br></td></tr
-><tr
-id=sl_svn4_830
-
-><td class="source">		do{<br></td></tr
-><tr
-id=sl_svn4_831
-
-><td class="source">			if(CurList == EndList) break;<br></td></tr
-><tr
-id=sl_svn4_832
-
-><td class="source">			if(WaypointIndex == PlayWaypoint) {<br></td></tr
-><tr
-id=sl_svn4_833
-
-><td class="source">//				if( ( GetForegroundWindow()==EQhWnd &amp;&amp; GetDistance(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,CurList-&gt;X,CurList-&gt;Y) &gt; DISTANCE_BETWEN_LOG ) || ( GetForegroundWindow()!=EQhWnd &amp;&amp; GetDistance(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,CurList-&gt;X,CurList-&gt;Y) &gt; (DISTANCE_BETWEN_LOG+10) ) ) <br></td></tr
-><tr
-id=sl_svn4_834
-
-><td class="source">				if( GetDistance(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,CurList-&gt;X,CurList-&gt;Y) &gt; DISTANCE_BETWEN_LOG+DistanceMod ) {<br></td></tr
-><tr
-id=sl_svn4_835
-
-><td class="source">					LookAt(CurList-&gt;X,CurList-&gt;Y,CurList-&gt;Z);<br></td></tr
-><tr
-id=sl_svn4_836
-
-><td class="source">					if( (PauseDoor - (long)clock()) &lt; 300 ) DoFwd(true);<br></td></tr
-><tr
-id=sl_svn4_837
-
-><td class="source">					OpenDoor();<br></td></tr
-><tr
-id=sl_svn4_838
-
-><td class="source">					FollowIdle = 0;<br></td></tr
-><tr
-id=sl_svn4_839
-
-><td class="source">					break;<br></td></tr
-><tr
-id=sl_svn4_840
-
-><td class="source">				} else {<br></td></tr
-><tr
-id=sl_svn4_841
-
-><td class="source">					if( ( !PlayReverse &amp;&amp; FollowPath.size() == PlayWaypoint ) || ( PlayReverse &amp;&amp; WaypointIndex == 1 ) ) {<br></td></tr
-><tr
-id=sl_svn4_842
-
-><td class="source">						if(PlayLoop) {<br></td></tr
-><tr
-id=sl_svn4_843
-
-><td class="source">							if(PlayReverse) PlayWaypoint = FollowPath.size();<br></td></tr
-><tr
-id=sl_svn4_844
-
-><td class="source">							else PlayWaypoint = 1;<br></td></tr
-><tr
-id=sl_svn4_845
-
-><td class="source">						} else {<br></td></tr
-><tr
-id=sl_svn4_846
-
-><td class="source">							ClearAll();<br></td></tr
-><tr
-id=sl_svn4_847
-
-><td class="source">						}<br></td></tr
-><tr
-id=sl_svn4_848
-
-><td class="source">					}<br></td></tr
-><tr
-id=sl_svn4_849
-
-><td class="source">					if (GetForegroundWindow()==EQhWnd) {<br></td></tr
-><tr
-id=sl_svn4_850
-
-><td class="source">						if(PlayReverse) PlayWaypoint--;<br></td></tr
-><tr
-id=sl_svn4_851
-
-><td class="source">						else PlayWaypoint++;<br></td></tr
-><tr
-id=sl_svn4_852
-
-><td class="source">					} else {<br></td></tr
-><tr
-id=sl_svn4_853
-
-><td class="source">						if(PlayReverse) PlayWaypoint = PlayWaypoint -3;<br></td></tr
-><tr
-id=sl_svn4_854
-
-><td class="source">						else PlayWaypoint = PlayWaypoint +3;<br></td></tr
-><tr
-id=sl_svn4_855
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_856
-
-><td class="source">						if((long)FollowPath.size() &lt; PlayWaypoint ) PlayWaypoint = FollowPath.size();<br></td></tr
-><tr
-id=sl_svn4_857
-
-><td class="source">						else if(PlayWaypoint &lt; 1 ) PlayWaypoint = 1;<br></td></tr
-><tr
-id=sl_svn4_858
-
-><td class="source">					}<br></td></tr
-><tr
-id=sl_svn4_859
-
-><td class="source">					break;<br></td></tr
-><tr
-id=sl_svn4_860
-
-><td class="source">				}<br></td></tr
-><tr
-id=sl_svn4_861
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_862
-
-><td class="source">			WaypointIndex++;<br></td></tr
-><tr
-id=sl_svn4_863
-
-><td class="source">			CurList++;<br></td></tr
-><tr
-id=sl_svn4_864
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_865
-
-><td class="source">		while(true);<br></td></tr
-><tr
-id=sl_svn4_866
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_867
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_868
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_869
-
-><td class="source">VOID ClearLag() {<br></td></tr
-><tr
-id=sl_svn4_870
-
-><td class="source">	if( FollowPath.size() ) {<br></td></tr
-><tr
-id=sl_svn4_871
-
-><td class="source">		list&lt;Position&gt;::iterator CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_872
-
-><td class="source">		list&lt;Position&gt;::iterator LastList;<br></td></tr
-><tr
-id=sl_svn4_873
-
-><td class="source">		list&lt;Position&gt;::iterator EndList=FollowPath.end();<br></td></tr
-><tr
-id=sl_svn4_874
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_875
-
-><td class="source">		if( CurList != EndList ) {<br></td></tr
-><tr
-id=sl_svn4_876
-
-><td class="source">			if(CurList-&gt;Warping) return;<br></td></tr
-><tr
-id=sl_svn4_877
-
-><td class="source">			if( InFront(CurList-&gt;X,CurList-&gt;Y, 100, true) ) {<br></td></tr
-><tr
-id=sl_svn4_878
-
-><td class="source">				CurList++;<br></td></tr
-><tr
-id=sl_svn4_879
-
-><td class="source">				for(int LagCount=0; LagCount&lt;15; LagCount++) {<br></td></tr
-><tr
-id=sl_svn4_880
-
-><td class="source">					if( CurList != EndList ) {<br></td></tr
-><tr
-id=sl_svn4_881
-
-><td class="source">						if( ( InFront(CurList-&gt;X,CurList-&gt;Y, 100, false) &amp;&amp; LagCount &lt; 10  ) || ( InFront(CurList-&gt;X,CurList-&gt;Y, 50, false) &amp;&amp; LagCount &gt;= 10 ) ) {<br></td></tr
-><tr
-id=sl_svn4_882
-
-><td class="source">							DebugSpewAlways(&quot;MQ2AdvPath::Removing lag() %d&quot;,LagCount);<br></td></tr
-><tr
-id=sl_svn4_883
-
-><td class="source">							CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_884
-
-><td class="source">							for(int LagCount2=0; LagCount2&lt;=LagCount; LagCount2++) ClearOne(CurList);<br></td></tr
-><tr
-id=sl_svn4_885
-
-><td class="source">							return;<br></td></tr
-><tr
-id=sl_svn4_886
-
-><td class="source">						}<br></td></tr
-><tr
-id=sl_svn4_887
-
-><td class="source">					} else {<br></td></tr
-><tr
-id=sl_svn4_888
-
-><td class="source">						return;<br></td></tr
-><tr
-id=sl_svn4_889
-
-><td class="source">					}<br></td></tr
-><tr
-id=sl_svn4_890
-
-><td class="source">					CurList++;<br></td></tr
-><tr
-id=sl_svn4_891
-
-><td class="source">				}<br></td></tr
-><tr
-id=sl_svn4_892
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_893
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_894
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_895
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_896
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_897
-
-><td class="source">VOID StuckCheck(bool reset) {<br></td></tr
-><tr
-id=sl_svn4_898
-
-><td class="source">	static time_t JumpTimer = time(NULL);<br></td></tr
-><tr
-id=sl_svn4_899
-
-><td class="source">	static time_t StuckMonitor = time(NULL);<br></td></tr
-><tr
-id=sl_svn4_900
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_901
-
-><td class="source">	static bool Jump = true;<br></td></tr
-><tr
-id=sl_svn4_902
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_903
-
-><td class="source">	static float StuckMonitorX = 0;<br></td></tr
-><tr
-id=sl_svn4_904
-
-><td class="source">	static float StuckMonitorY = 0;<br></td></tr
-><tr
-id=sl_svn4_905
-
-><td class="source">	if(!gbInZone || !GetCharInfo() || !GetCharInfo()-&gt;pSpawn) return;<br></td></tr
-><tr
-id=sl_svn4_906
-
-><td class="source">	if( FollowPath.size() &amp;&amp; UseStuckLogic &amp;&amp; !reset &amp;&amp; StatusState == STATUS_ON &amp;&amp; ( FollowState == FOLLOW_PLAYING || FollowState == FOLLOW_FOLLOWING ) ) {<br></td></tr
-><tr
-id=sl_svn4_907
-
-><td class="source">		list&lt;Position&gt;::iterator CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_908
-
-><td class="source">		if (FollowState == FOLLOW_PLAYING) {<br></td></tr
-><tr
-id=sl_svn4_909
-
-><td class="source">			list&lt;Position&gt;::iterator EndList=FollowPath.end();<br></td></tr
-><tr
-id=sl_svn4_910
-
-><td class="source">			long WaypointIndex=1;<br></td></tr
-><tr
-id=sl_svn4_911
-
-><td class="source">			do{<br></td></tr
-><tr
-id=sl_svn4_912
-
-><td class="source">				if(CurList == EndList) return;<br></td></tr
-><tr
-id=sl_svn4_913
-
-><td class="source">				if(WaypointIndex != PlayWaypoint) {<br></td></tr
-><tr
-id=sl_svn4_914
-
-><td class="source">					WaypointIndex++;<br></td></tr
-><tr
-id=sl_svn4_915
-
-><td class="source">					CurList++;<br></td></tr
-><tr
-id=sl_svn4_916
-
-><td class="source">				} else break;<br></td></tr
-><tr
-id=sl_svn4_917
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_918
-
-><td class="source">			while(true);<br></td></tr
-><tr
-id=sl_svn4_919
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_920
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_921
-
-><td class="source">		int TimerMod = 2;<br></td></tr
-><tr
-id=sl_svn4_922
-
-><td class="source">		if( CurList-&gt;Z &gt; GetCharInfo()-&gt;pSpawn-&gt;Z+5 ) TimerMod = 5;<br></td></tr
-><tr
-id=sl_svn4_923
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_924
-
-><td class="source">		if ( FindSpeed(GetCharInfo()-&gt;pSpawn) &amp;&amp; StatusState == STATUS_ON &amp;&amp; !GetCharInfo()-&gt;Stunned &amp;&amp; GetCharInfo()-&gt;pSpawn-&gt;SpeedMultiplier != -10000 ) {<br></td></tr
-><tr
-id=sl_svn4_925
-
-><td class="source">				float pulseMoved=GetDistance(MeMonitorX,MeMonitorY);<br></td></tr
-><tr
-id=sl_svn4_926
-
-><td class="source">				float expectedPulseMoved = FindSpeed(GetCharInfo()-&gt;pSpawn)/6/(thisClock-lastClock);<br></td></tr
-><tr
-id=sl_svn4_927
-
-><td class="source">				time_t now = time(NULL);<br></td></tr
-><tr
-id=sl_svn4_928
-
-><td class="source">				if ( Jump &amp;&amp; !GetCharInfo()-&gt;pSpawn-&gt;Levitate &amp;&amp; !GetCharInfo()-&gt;pSpawn-&gt;UnderWater &amp;&amp; ( !pulseMoved || ( pulseMoved &lt; 0.1 &amp;&amp; pulseMoved &lt; expectedPulseMoved ) ) &amp;&amp; JumpTimer+1 &lt; now ) {<br></td></tr
-><tr
-id=sl_svn4_929
-
-><td class="source">					Jump = false;<br></td></tr
-><tr
-id=sl_svn4_930
-
-><td class="source">					JumpTimer = time(NULL);<br></td></tr
-><tr
-id=sl_svn4_931
-
-><td class="source">					MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;JUMP&quot;),1,0);<br></td></tr
-><tr
-id=sl_svn4_932
-
-><td class="source">					MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;JUMP&quot;),0,0);<br></td></tr
-><tr
-id=sl_svn4_933
-
-><td class="source">					DoOpenDoor = true;<br></td></tr
-><tr
-id=sl_svn4_934
-
-><td class="source">				}<br></td></tr
-><tr
-id=sl_svn4_935
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_936
-
-><td class="source">				if ( GetDistance(StuckMonitorX,StuckMonitorY) &gt; 2 ) {<br></td></tr
-><tr
-id=sl_svn4_937
-
-><td class="source">					reset = true;<br></td></tr
-><tr
-id=sl_svn4_938
-
-><td class="source">				} else if ( ( !pulseMoved || ( pulseMoved &lt; 0.1 &amp;&amp; pulseMoved &lt; expectedPulseMoved ) ) &amp;&amp; StuckMonitor+TimerMod &lt; now ) {<br></td></tr
-><tr
-id=sl_svn4_939
-
-><td class="source">					StuckMonitor = time(NULL);<br></td></tr
-><tr
-id=sl_svn4_940
-
-><td class="source">					WriteChatf(&quot;[MQ2AdvPath] Stuck Detected!!&quot;);<br></td></tr
-><tr
-id=sl_svn4_941
-
-><td class="source">					ClearAll();<br></td></tr
-><tr
-id=sl_svn4_942
-
-><td class="source">				}<br></td></tr
-><tr
-id=sl_svn4_943
-
-><td class="source">		} else reset = true;<br></td></tr
-><tr
-id=sl_svn4_944
-
-><td class="source">	} else reset = true;<br></td></tr
-><tr
-id=sl_svn4_945
-
-><td class="source">	if( reset ) {<br></td></tr
-><tr
-id=sl_svn4_946
-
-><td class="source">		Jump = true;<br></td></tr
-><tr
-id=sl_svn4_947
-
-><td class="source">		StuckMonitorX = GetCharInfo()-&gt;pSpawn-&gt;X;<br></td></tr
-><tr
-id=sl_svn4_948
-
-><td class="source">		StuckMonitorY = GetCharInfo()-&gt;pSpawn-&gt;Y;<br></td></tr
-><tr
-id=sl_svn4_949
-
-><td class="source">		StuckMonitor = time(NULL);<br></td></tr
-><tr
-id=sl_svn4_950
-
-><td class="source">		JumpTimer = time(NULL);<br></td></tr
-><tr
-id=sl_svn4_951
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_952
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_953
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_954
-
-><td class="source">VOID RecordingWaypoints() {<br></td></tr
-><tr
-id=sl_svn4_955
-
-><td class="source">	if(MonitorID) {<br></td></tr
-><tr
-id=sl_svn4_956
-
-><td class="source">		if(PSPAWNINFO pSpawn = (PSPAWNINFO)GetSpawnByID(MonitorID)) {<br></td></tr
-><tr
-id=sl_svn4_957
-
-><td class="source">			if( GetDistance3D(MonitorX,MonitorY,MonitorZ,pSpawn-&gt;X,pSpawn-&gt;Y,pSpawn-&gt;Z) &gt; 100 ) {<br></td></tr
-><tr
-id=sl_svn4_958
-
-><td class="source">				WriteChatf(&quot;[MQ2AdvPath] Warping Detected on %s&quot;,pSpawn-&gt;Name);<br></td></tr
-><tr
-id=sl_svn4_959
-
-><td class="source">				AddWaypoint(MonitorID,true);<br></td></tr
-><tr
-id=sl_svn4_960
-
-><td class="source">			} else if( GetDistance3D(MonitorX,MonitorY,MonitorZ,pSpawn-&gt;X,pSpawn-&gt;Y,pSpawn-&gt;Z) &gt;= DISTANCE_BETWEN_LOG ) AddWaypoint(MonitorID);<br></td></tr
-><tr
-id=sl_svn4_961
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_962
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_963
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_964
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_965
-
-><td class="source">class MQ2AdvPathType : public MQ2Type {<br></td></tr
-><tr
-id=sl_svn4_966
-
-><td class="source">	private:<br></td></tr
-><tr
-id=sl_svn4_967
-
-><td class="source">		char Temps[MAX_STRING];<br></td></tr
-><tr
-id=sl_svn4_968
-
-><td class="source">	public:<br></td></tr
-><tr
-id=sl_svn4_969
-
-><td class="source">		enum AdvPathMembers {<br></td></tr
-><tr
-id=sl_svn4_970
-
-><td class="source">			Active=1,<br></td></tr
-><tr
-id=sl_svn4_971
-
-><td class="source">			State=2,<br></td></tr
-><tr
-id=sl_svn4_972
-
-><td class="source">			Waypoints=3,<br></td></tr
-><tr
-id=sl_svn4_973
-
-><td class="source">			NextWaypoint=4,<br></td></tr
-><tr
-id=sl_svn4_974
-
-><td class="source">			Y=5,<br></td></tr
-><tr
-id=sl_svn4_975
-
-><td class="source">			X=6,<br></td></tr
-><tr
-id=sl_svn4_976
-
-><td class="source">			Z=7,<br></td></tr
-><tr
-id=sl_svn4_977
-
-><td class="source">			Monitor=8,<br></td></tr
-><tr
-id=sl_svn4_978
-
-><td class="source">			Idle=9,<br></td></tr
-><tr
-id=sl_svn4_979
-
-><td class="source">			Length=10,<br></td></tr
-><tr
-id=sl_svn4_980
-
-><td class="source">			Following=11,<br></td></tr
-><tr
-id=sl_svn4_981
-
-><td class="source">			Playing=12,<br></td></tr
-><tr
-id=sl_svn4_982
-
-><td class="source">			Recording=13,<br></td></tr
-><tr
-id=sl_svn4_983
-
-><td class="source">			Status=14,<br></td></tr
-><tr
-id=sl_svn4_984
-
-><td class="source">			Paused=15,<br></td></tr
-><tr
-id=sl_svn4_985
-
-><td class="source">			WaitingWarp=16,<br></td></tr
-><tr
-id=sl_svn4_986
-
-><td class="source">			StopDistance=17,<br></td></tr
-><tr
-id=sl_svn4_987
-
-><td class="source">			CheckPoint=18<br></td></tr
-><tr
-id=sl_svn4_988
-
-><td class="source">		};<br></td></tr
-><tr
-id=sl_svn4_989
-
-><td class="source">		MQ2AdvPathType():MQ2Type(&quot;AdvPath&quot;) {<br></td></tr
-><tr
-id=sl_svn4_990
-
-><td class="source">			TypeMember(Active);<br></td></tr
-><tr
-id=sl_svn4_991
-
-><td class="source">			TypeMember(State);<br></td></tr
-><tr
-id=sl_svn4_992
-
-><td class="source">			TypeMember(Waypoints);<br></td></tr
-><tr
-id=sl_svn4_993
-
-><td class="source">			TypeMember(NextWaypoint);<br></td></tr
-><tr
-id=sl_svn4_994
-
-><td class="source">			TypeMember(Y);<br></td></tr
-><tr
-id=sl_svn4_995
-
-><td class="source">			TypeMember(X);<br></td></tr
-><tr
-id=sl_svn4_996
-
-><td class="source">			TypeMember(Z);<br></td></tr
-><tr
-id=sl_svn4_997
-
-><td class="source">			TypeMember(Monitor);<br></td></tr
-><tr
-id=sl_svn4_998
-
-><td class="source">			TypeMember(Idle);<br></td></tr
-><tr
-id=sl_svn4_999
-
-><td class="source">			TypeMember(Length);<br></td></tr
-><tr
-id=sl_svn4_1000
-
-><td class="source">			TypeMember(Following);<br></td></tr
-><tr
-id=sl_svn4_1001
-
-><td class="source">			TypeMember(Playing);<br></td></tr
-><tr
-id=sl_svn4_1002
-
-><td class="source">			TypeMember(Recording);<br></td></tr
-><tr
-id=sl_svn4_1003
-
-><td class="source">			TypeMember(Status);<br></td></tr
-><tr
-id=sl_svn4_1004
-
-><td class="source">			TypeMember(Paused);<br></td></tr
-><tr
-id=sl_svn4_1005
-
-><td class="source">			TypeMember(WaitingWarp);<br></td></tr
-><tr
-id=sl_svn4_1006
-
-><td class="source">			TypeMember(StopDistance);<br></td></tr
-><tr
-id=sl_svn4_1007
-
-><td class="source">			TypeMember(CheckPoint);<br></td></tr
-><tr
-id=sl_svn4_1008
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_1009
-
-><td class="source">		bool GetMember(MQ2VARPTR VarPtr, PCHAR Member, PCHAR Index, MQ2TYPEVAR &amp;Dest) {<br></td></tr
-><tr
-id=sl_svn4_1010
-
-><td class="source">			list&lt;Position&gt;::iterator CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_1011
-
-><td class="source">			list&lt;Position&gt;::iterator EndList=FollowPath.end();<br></td></tr
-><tr
-id=sl_svn4_1012
-
-><td class="source">			int i = 1;<br></td></tr
-><tr
-id=sl_svn4_1013
-
-><td class="source">			float TheLength = 0;<br></td></tr
-><tr
-id=sl_svn4_1014
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1015
-
-><td class="source">			PMQ2TYPEMEMBER pMember=MQ2AdvPathType::FindMember(Member); <br></td></tr
-><tr
-id=sl_svn4_1016
-
-><td class="source">			if(pMember) switch((AdvPathMembers)pMember-&gt;ID) {<br></td></tr
-><tr
-id=sl_svn4_1017
-
-><td class="source">				case Active:										// Plugin on and Ready<br></td></tr
-><tr
-id=sl_svn4_1018
-
-><td class="source">					Dest.DWord=(gbInZone &amp;&amp; GetCharInfo() &amp;&amp; GetCharInfo()-&gt;pSpawn);<br></td></tr
-><tr
-id=sl_svn4_1019
-
-><td class="source">					Dest.Type=pBoolType;<br></td></tr
-><tr
-id=sl_svn4_1020
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1021
-
-><td class="source">				case State:											// FollowState, 0 = off, 1 = Following, 2 = Playing, 3 = Recording<br></td></tr
-><tr
-id=sl_svn4_1022
-
-><td class="source">					Dest.DWord=FollowState;<br></td></tr
-><tr
-id=sl_svn4_1023
-
-><td class="source">					Dest.Type=pIntType;<br></td></tr
-><tr
-id=sl_svn4_1024
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1025
-
-><td class="source">				case Waypoints:										// Number of Waypoints<br></td></tr
-><tr
-id=sl_svn4_1026
-
-><td class="source">					Dest.DWord=FollowPath.size();<br></td></tr
-><tr
-id=sl_svn4_1027
-
-><td class="source">					Dest.Type=pIntType;<br></td></tr
-><tr
-id=sl_svn4_1028
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1029
-
-><td class="source">				case NextWaypoint:									// Next Waypoint<br></td></tr
-><tr
-id=sl_svn4_1030
-
-><td class="source">					Dest.DWord=PlayWaypoint;<br></td></tr
-><tr
-id=sl_svn4_1031
-
-><td class="source">					Dest.Type=pIntType;<br></td></tr
-><tr
-id=sl_svn4_1032
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1033
-
-><td class="source">				case Y:												// Waypoint Y<br></td></tr
-><tr
-id=sl_svn4_1034
-
-><td class="source">					while(CurList!=EndList) {						<br></td></tr
-><tr
-id=sl_svn4_1035
-
-><td class="source">						if( ( i == atol(TloIndex) || ( TloIndex[0] != 0 &amp;&amp; !stricmp(TloIndex,CurList-&gt;CheckPoint) ) ) || (  i == atol(Index) || ( Index[0] != 0 &amp;&amp; !stricmp(Index,CurList-&gt;CheckPoint) ) ) ) {<br></td></tr
-><tr
-id=sl_svn4_1036
-
-><td class="source">							Dest.Float=CurList-&gt;Y;<br></td></tr
-><tr
-id=sl_svn4_1037
-
-><td class="source">							Dest.Type=pFloatType;<br></td></tr
-><tr
-id=sl_svn4_1038
-
-><td class="source">							return true;<br></td></tr
-><tr
-id=sl_svn4_1039
-
-><td class="source">						}<br></td></tr
-><tr
-id=sl_svn4_1040
-
-><td class="source">						i++;<br></td></tr
-><tr
-id=sl_svn4_1041
-
-><td class="source">						CurList++;<br></td></tr
-><tr
-id=sl_svn4_1042
-
-><td class="source">					}<br></td></tr
-><tr
-id=sl_svn4_1043
-
-><td class="source">					strcpy(Temps,&quot;NULL&quot;);<br></td></tr
-><tr
-id=sl_svn4_1044
-
-><td class="source">					Dest.Type=pStringType;<br></td></tr
-><tr
-id=sl_svn4_1045
-
-><td class="source">					Dest.Ptr=Temps;<br></td></tr
-><tr
-id=sl_svn4_1046
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1047
-
-><td class="source">				case X:												// Waypoint X<br></td></tr
-><tr
-id=sl_svn4_1048
-
-><td class="source">					while(CurList!=EndList) {<br></td></tr
-><tr
-id=sl_svn4_1049
-
-><td class="source">						if( ( i == atol(TloIndex) || ( TloIndex[0] != 0 &amp;&amp; !stricmp(TloIndex,CurList-&gt;CheckPoint) ) ) || (  i == atol(Index) || ( Index[0] != 0 &amp;&amp; !stricmp(Index,CurList-&gt;CheckPoint) ) ) ) {<br></td></tr
-><tr
-id=sl_svn4_1050
-
-><td class="source">							Dest.Float=CurList-&gt;X;<br></td></tr
-><tr
-id=sl_svn4_1051
-
-><td class="source">							Dest.Type=pFloatType;<br></td></tr
-><tr
-id=sl_svn4_1052
-
-><td class="source">							return true;<br></td></tr
-><tr
-id=sl_svn4_1053
-
-><td class="source">						}<br></td></tr
-><tr
-id=sl_svn4_1054
-
-><td class="source">						i++;<br></td></tr
-><tr
-id=sl_svn4_1055
-
-><td class="source">						CurList++;<br></td></tr
-><tr
-id=sl_svn4_1056
-
-><td class="source">					}<br></td></tr
-><tr
-id=sl_svn4_1057
-
-><td class="source">					strcpy(Temps,&quot;NULL&quot;);<br></td></tr
-><tr
-id=sl_svn4_1058
-
-><td class="source">					Dest.Type=pStringType;<br></td></tr
-><tr
-id=sl_svn4_1059
-
-><td class="source">					Dest.Ptr=Temps;<br></td></tr
-><tr
-id=sl_svn4_1060
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1061
-
-><td class="source">				case Z:												// Waypoint Z<br></td></tr
-><tr
-id=sl_svn4_1062
-
-><td class="source">					while(CurList!=EndList) {<br></td></tr
-><tr
-id=sl_svn4_1063
-
-><td class="source">						if( ( i == atol(TloIndex) || ( TloIndex[0] != 0 &amp;&amp; !stricmp(TloIndex,CurList-&gt;CheckPoint) ) ) || (  i == atol(Index) || ( Index[0] != 0 &amp;&amp; !stricmp(Index,CurList-&gt;CheckPoint) ) ) ) {<br></td></tr
-><tr
-id=sl_svn4_1064
-
-><td class="source">							Dest.Float=CurList-&gt;Z;<br></td></tr
-><tr
-id=sl_svn4_1065
-
-><td class="source">							Dest.Type=pFloatType;<br></td></tr
-><tr
-id=sl_svn4_1066
-
-><td class="source">							return true;<br></td></tr
-><tr
-id=sl_svn4_1067
-
-><td class="source">						}<br></td></tr
-><tr
-id=sl_svn4_1068
-
-><td class="source">						i++;<br></td></tr
-><tr
-id=sl_svn4_1069
-
-><td class="source">						CurList++;<br></td></tr
-><tr
-id=sl_svn4_1070
-
-><td class="source">					}<br></td></tr
-><tr
-id=sl_svn4_1071
-
-><td class="source">					strcpy(Temps,&quot;NULL&quot;);<br></td></tr
-><tr
-id=sl_svn4_1072
-
-><td class="source">					Dest.Type=pStringType;<br></td></tr
-><tr
-id=sl_svn4_1073
-
-><td class="source">					Dest.Ptr=Temps;<br></td></tr
-><tr
-id=sl_svn4_1074
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1075
-
-><td class="source">				case Monitor:										// Spawn your following<br></td></tr
-><tr
-id=sl_svn4_1076
-
-><td class="source">					Dest.Ptr=(PSPAWNINFO)GetSpawnByID(MonitorID);<br></td></tr
-><tr
-id=sl_svn4_1077
-
-><td class="source">					Dest.Type=pSpawnType;<br></td></tr
-><tr
-id=sl_svn4_1078
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1079
-
-><td class="source">				case Idle:											// FollowIdle time when following and not moving<br></td></tr
-><tr
-id=sl_svn4_1080
-
-><td class="source">					Dest.DWord=(FollowState &amp;&amp; FollowIdle)?(((long)clock()-FollowIdle)/1000):0;<br></td></tr
-><tr
-id=sl_svn4_1081
-
-><td class="source">					Dest.Type=pIntType;<br></td></tr
-><tr
-id=sl_svn4_1082
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1083
-
-><td class="source">				case Length:										// Estimated length off the follow path<br></td></tr
-><tr
-id=sl_svn4_1084
-
-><td class="source">					if( FollowPath.size() ) {<br></td></tr
-><tr
-id=sl_svn4_1085
-
-><td class="source">						list&lt;Position&gt;::iterator CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_1086
-
-><td class="source">						TheLength = GetDistance(GetCharInfo()-&gt;pSpawn-&gt;X,GetCharInfo()-&gt;pSpawn-&gt;Y,CurList-&gt;X,CurList-&gt;Y);<br></td></tr
-><tr
-id=sl_svn4_1087
-
-><td class="source">						if( FollowPath.size() &gt; 1 )	TheLength = ((FollowPath.size()-1)*DISTANCE_BETWEN_LOG)+TheLength;<br></td></tr
-><tr
-id=sl_svn4_1088
-
-><td class="source">					}<br></td></tr
-><tr
-id=sl_svn4_1089
-
-><td class="source">					Dest.Float=TheLength;<br></td></tr
-><tr
-id=sl_svn4_1090
-
-><td class="source">					Dest.Type=pFloatType;<br></td></tr
-><tr
-id=sl_svn4_1091
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1092
-
-><td class="source">				case Following:<br></td></tr
-><tr
-id=sl_svn4_1093
-
-><td class="source">					Dest.DWord=(FollowState==FOLLOW_FOLLOWING);<br></td></tr
-><tr
-id=sl_svn4_1094
-
-><td class="source">					Dest.Type=pBoolType;<br></td></tr
-><tr
-id=sl_svn4_1095
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1096
-
-><td class="source">				case Playing:<br></td></tr
-><tr
-id=sl_svn4_1097
-
-><td class="source">					Dest.DWord=(FollowState==FOLLOW_PLAYING);<br></td></tr
-><tr
-id=sl_svn4_1098
-
-><td class="source">					Dest.Type=pBoolType;<br></td></tr
-><tr
-id=sl_svn4_1099
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1100
-
-><td class="source">				case Recording:<br></td></tr
-><tr
-id=sl_svn4_1101
-
-><td class="source">					Dest.DWord=(FollowState==FOLLOW_RECORDING);<br></td></tr
-><tr
-id=sl_svn4_1102
-
-><td class="source">					Dest.Type=pBoolType;<br></td></tr
-><tr
-id=sl_svn4_1103
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1104
-
-><td class="source">				case Status:<br></td></tr
-><tr
-id=sl_svn4_1105
-
-><td class="source">					Dest.DWord=StatusState;<br></td></tr
-><tr
-id=sl_svn4_1106
-
-><td class="source">					Dest.Type=pIntType;<br></td></tr
-><tr
-id=sl_svn4_1107
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1108
-
-><td class="source">				case Paused:<br></td></tr
-><tr
-id=sl_svn4_1109
-
-><td class="source">					Dest.DWord=(StatusState==STATUS_PAUSED);<br></td></tr
-><tr
-id=sl_svn4_1110
-
-><td class="source">					Dest.Type=pBoolType;<br></td></tr
-><tr
-id=sl_svn4_1111
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1112
-
-><td class="source">				case WaitingWarp:<br></td></tr
-><tr
-id=sl_svn4_1113
-
-><td class="source">					Dest.DWord=MonitorWarp;<br></td></tr
-><tr
-id=sl_svn4_1114
-
-><td class="source">					Dest.Type=pBoolType;<br></td></tr
-><tr
-id=sl_svn4_1115
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1116
-
-><td class="source">				case StopDistance:<br></td></tr
-><tr
-id=sl_svn4_1117
-
-><td class="source">					Dest.DWord=(DISTANCE_BETWEN_LOG+DistanceMod);<br></td></tr
-><tr
-id=sl_svn4_1118
-
-><td class="source">					Dest.Type=pIntType;<br></td></tr
-><tr
-id=sl_svn4_1119
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1120
-
-><td class="source">				case CheckPoint:<br></td></tr
-><tr
-id=sl_svn4_1121
-
-><td class="source">					strcpy(Temps,&quot;NULL&quot;);<br></td></tr
-><tr
-id=sl_svn4_1122
-
-><td class="source">					while(CurList!=EndList) {						<br></td></tr
-><tr
-id=sl_svn4_1123
-
-><td class="source">						if( ( i == atol(TloIndex) || ( TloIndex[0] != 0 &amp;&amp; !stricmp(TloIndex,CurList-&gt;CheckPoint) ) ) || (  i == atol(Index) || ( Index[0] != 0 &amp;&amp; !stricmp(Index,CurList-&gt;CheckPoint) ) ) ) {<br></td></tr
-><tr
-id=sl_svn4_1124
-
-><td class="source">							strcpy(Temps,CurList-&gt;CheckPoint);<br></td></tr
-><tr
-id=sl_svn4_1125
-
-><td class="source">							break;<br></td></tr
-><tr
-id=sl_svn4_1126
-
-><td class="source">						}<br></td></tr
-><tr
-id=sl_svn4_1127
-
-><td class="source">						i++;<br></td></tr
-><tr
-id=sl_svn4_1128
-
-><td class="source">						CurList++;<br></td></tr
-><tr
-id=sl_svn4_1129
-
-><td class="source">					}<br></td></tr
-><tr
-id=sl_svn4_1130
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1131
-
-><td class="source">					Dest.Type=pStringType;<br></td></tr
-><tr
-id=sl_svn4_1132
-
-><td class="source">					Dest.Ptr=Temps;<br></td></tr
-><tr
-id=sl_svn4_1133
-
-><td class="source">					return true;<br></td></tr
-><tr
-id=sl_svn4_1134
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_1135
-
-><td class="source">			strcpy(Temps,&quot;NULL&quot;);<br></td></tr
-><tr
-id=sl_svn4_1136
-
-><td class="source">			Dest.Type=pStringType;<br></td></tr
-><tr
-id=sl_svn4_1137
-
-><td class="source">			Dest.Ptr=Temps;<br></td></tr
-><tr
-id=sl_svn4_1138
-
-><td class="source">			return true;<br></td></tr
-><tr
-id=sl_svn4_1139
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_1140
-
-><td class="source">		bool ToString(MQ2VARPTR VarPtr, PCHAR Destination) {<br></td></tr
-><tr
-id=sl_svn4_1141
-
-><td class="source">			strcpy(Destination,&quot;TRUE&quot;);<br></td></tr
-><tr
-id=sl_svn4_1142
-
-><td class="source">			return true;<br></td></tr
-><tr
-id=sl_svn4_1143
-
-><td class="source">		} <br></td></tr
-><tr
-id=sl_svn4_1144
-
-><td class="source">		bool FromData(MQ2VARPTR &amp;VarPtr, MQ2TYPEVAR &amp;Source) {<br></td></tr
-><tr
-id=sl_svn4_1145
-
-><td class="source">			return false;<br></td></tr
-><tr
-id=sl_svn4_1146
-
-><td class="source">		} <br></td></tr
-><tr
-id=sl_svn4_1147
-
-><td class="source">		bool FromString(MQ2VARPTR &amp;VarPtr, PCHAR Source) {<br></td></tr
-><tr
-id=sl_svn4_1148
-
-><td class="source">			return false;<br></td></tr
-><tr
-id=sl_svn4_1149
-
-><td class="source">		} <br></td></tr
-><tr
-id=sl_svn4_1150
-
-><td class="source">		~MQ2AdvPathType() { } <br></td></tr
-><tr
-id=sl_svn4_1151
-
-><td class="source">}; <br></td></tr
-><tr
-id=sl_svn4_1152
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1153
-
-><td class="source">BOOL dataAdvPath(PCHAR szName, MQ2TYPEVAR &amp;Dest) {<br></td></tr
-><tr
-id=sl_svn4_1154
-
-><td class="source">	TloIndex = szName;<br></td></tr
-><tr
-id=sl_svn4_1155
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1156
-
-><td class="source">	Dest.DWord=1;<br></td></tr
-><tr
-id=sl_svn4_1157
-
-><td class="source">	Dest.Type=pAdvPathType;<br></td></tr
-><tr
-id=sl_svn4_1158
-
-><td class="source">	return true;<br></td></tr
-><tr
-id=sl_svn4_1159
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_1160
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1161
-
-><td class="source">VOID ReadINI() {<br></td></tr
-><tr
-id=sl_svn4_1162
-
-><td class="source">	DebugSpewAlways(&quot;MQ2CastTimer::ReadINI()&quot;);<br></td></tr
-><tr
-id=sl_svn4_1163
-
-><td class="source">	if(!gbInZone || !GetCharInfo() || !GetCharInfo()-&gt;pSpawn) return;<br></td></tr
-><tr
-id=sl_svn4_1164
-
-><td class="source">	char szSettingINISection[MAX_STRING];<br></td></tr
-><tr
-id=sl_svn4_1165
-
-><td class="source">	sprintf(szSettingINISection,&quot;Settings.%s.%s&quot;,EQADDR_SERVERNAME,GetCharInfo()-&gt;pSpawn-&gt;Name);<br></td></tr
-><tr
-id=sl_svn4_1166
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1167
-
-><td class="source">	AutoStopFollow = GetPrivateProfileInt(szSettingINISection,&quot;AutoStopFollow&quot;,      0,INIFileName);<br></td></tr
-><tr
-id=sl_svn4_1168
-
-><td class="source">	AutoStopPath = GetPrivateProfileInt(szSettingINISection,&quot;AutoStopPath&quot;,      0,INIFileName);<br></td></tr
-><tr
-id=sl_svn4_1169
-
-><td class="source">	UseStuckLogic = 0x00000001 &amp; GetPrivateProfileInt(szSettingINISection,&quot;UseStuckLogic&quot;,      1,INIFileName);<br></td></tr
-><tr
-id=sl_svn4_1170
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1171
-
-><td class="source">	WritePrivateProfileString(szSettingINISection,&quot;AutoStopFollow&quot;,      itoa(AutoStopFollow,         Buffer,10),INIFileName);<br></td></tr
-><tr
-id=sl_svn4_1172
-
-><td class="source">	WritePrivateProfileString(szSettingINISection,&quot;AutoStopPath&quot;,      itoa(AutoStopPath,            Buffer,10),INIFileName);<br></td></tr
-><tr
-id=sl_svn4_1173
-
-><td class="source">	WritePrivateProfileString(szSettingINISection,&quot;UseStuckLogic&quot;,      itoa(UseStuckLogic,         Buffer,10),INIFileName);<br></td></tr
-><tr
-id=sl_svn4_1174
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_1175
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1176
-
-><td class="source">// Called once, when the plugin is to initialize<br></td></tr
-><tr
-id=sl_svn4_1177
-
-><td class="source">PLUGIN_API VOID InitializePlugin(VOID) {<br></td></tr
-><tr
-id=sl_svn4_1178
-
-><td class="source">	DebugSpewAlways(&quot;Initializing MQ2AdvPath&quot;);<br></td></tr
-><tr
-id=sl_svn4_1179
-
-><td class="source">	if (EQWhMod=GetModuleHandle(&quot;eqw.dll&quot;)) EQW_GetDisplayWindow=(fEQW_GetDisplayWindow)GetProcAddress(EQWhMod,&quot;EQW_GetDisplayWindow&quot;);<br></td></tr
-><tr
-id=sl_svn4_1180
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1181
-
-><td class="source">    AddCommand(&quot;/afollow&quot;,MQFollowCommand);<br></td></tr
-><tr
-id=sl_svn4_1182
-
-><td class="source">	AddCommand(&quot;/play&quot;,MQPlayCommand);<br></td></tr
-><tr
-id=sl_svn4_1183
-
-><td class="source">	AddCommand(&quot;/record&quot;,MQRecordCommand);<br></td></tr
-><tr
-id=sl_svn4_1184
-
-><td class="source">	AddCommand(&quot;/arecord&quot;,MQRecordCommand);<br></td></tr
-><tr
-id=sl_svn4_1185
-
-><td class="source">	pAdvPathType = new MQ2AdvPathType;<br></td></tr
-><tr
-id=sl_svn4_1186
-
-><td class="source">	AddMQ2Data(&quot;AdvPath&quot;,dataAdvPath);<br></td></tr
-><tr
-id=sl_svn4_1187
-
-><td class="source">	sprintf(Buffer,&quot;%s\\%s&quot;,gszINIPath,&quot;MQ2AdvPath&quot;);<br></td></tr
-><tr
-id=sl_svn4_1188
-
-><td class="source">	mkdir(Buffer);<br></td></tr
-><tr
-id=sl_svn4_1189
-
-><td class="source">	CreateBinds();<br></td></tr
-><tr
-id=sl_svn4_1190
-
-><td class="source">	ReadINI();<br></td></tr
-><tr
-id=sl_svn4_1191
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_1192
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1193
-
-><td class="source">// Called once, when the plugin is to shutdown<br></td></tr
-><tr
-id=sl_svn4_1194
-
-><td class="source">PLUGIN_API VOID ShutdownPlugin(VOID) {<br></td></tr
-><tr
-id=sl_svn4_1195
-
-><td class="source">	DebugSpewAlways(&quot;Shutting down MQ2AdvPath&quot;);<br></td></tr
-><tr
-id=sl_svn4_1196
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1197
-
-><td class="source">	RemoveCommand(&quot;/afollow&quot;);<br></td></tr
-><tr
-id=sl_svn4_1198
-
-><td class="source">	RemoveCommand(&quot;/play&quot;);<br></td></tr
-><tr
-id=sl_svn4_1199
-
-><td class="source">	RemoveCommand(&quot;/record&quot;);<br></td></tr
-><tr
-id=sl_svn4_1200
-
-><td class="source">	RemoveCommand(&quot;/arecord&quot;);<br></td></tr
-><tr
-id=sl_svn4_1201
-
-><td class="source">	delete pAdvPathType;<br></td></tr
-><tr
-id=sl_svn4_1202
-
-><td class="source">	RemoveMQ2Data(&quot;AdvPath&quot;);<br></td></tr
-><tr
-id=sl_svn4_1203
-
-><td class="source">	DestroyBinds();<br></td></tr
-><tr
-id=sl_svn4_1204
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1205
-
-><td class="source">	ClearAll();<br></td></tr
-><tr
-id=sl_svn4_1206
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_1207
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1208
-
-><td class="source">// This is called every time MQ pulses<br></td></tr
-><tr
-id=sl_svn4_1209
-
-><td class="source">PLUGIN_API VOID OnPulse(VOID) {<br></td></tr
-><tr
-id=sl_svn4_1210
-
-><td class="source">	static int CameraMode = 0;<br></td></tr
-><tr
-id=sl_svn4_1211
-
-><td class="source">	if(!gbInZone || !GetCharInfo() || !GetCharInfo()-&gt;pSpawn) return;<br></td></tr
-><tr
-id=sl_svn4_1212
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1213
-
-><td class="source">	thisClock = (unsigned long)clock();<br></td></tr
-><tr
-id=sl_svn4_1214
-
-><td class="source">	DistanceMod = ((thisClock-lastClock)*(thisClock-lastClock))/1000/2;<br></td></tr
-><tr
-id=sl_svn4_1215
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1216
-
-><td class="source">	if ( PathNameZone[0] &amp;&amp; MonitorZoneID != GetCharInfo()-&gt;zoneId ) {<br></td></tr
-><tr
-id=sl_svn4_1217
-
-><td class="source">		WriteChatf(&quot;[MQ2AdvPath] Zoned Loading next path (%s)&quot;,PathNameZone);<br></td></tr
-><tr
-id=sl_svn4_1218
-
-><td class="source">		MonitorZoneID = GetCharInfo()-&gt;zoneId;<br></td></tr
-><tr
-id=sl_svn4_1219
-
-><td class="source">		if( LoadPath(PathNameZone) ) {<br></td></tr
-><tr
-id=sl_svn4_1220
-
-><td class="source">			FollowWaypointsInit(100000.00);<br></td></tr
-><tr
-id=sl_svn4_1221
-
-><td class="source">		} else {<br></td></tr
-><tr
-id=sl_svn4_1222
-
-><td class="source">			ClearAll();<br></td></tr
-><tr
-id=sl_svn4_1223
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_1224
-
-><td class="source">	} else if( SpawnNameZone[0] &amp;&amp; MonitorZoneID != GetCharInfo()-&gt;zoneId ) {<br></td></tr
-><tr
-id=sl_svn4_1225
-
-><td class="source">		PSPAWNINFO sSpawn = NULL;			// Search Spawn<br></td></tr
-><tr
-id=sl_svn4_1226
-
-><td class="source">		PSPAWNINFO pSpawn = NULL;			// Output Spawn<br></td></tr
-><tr
-id=sl_svn4_1227
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1228
-
-><td class="source">		SEARCHSPAWN ssSpawn;				// Search String ( Spawn )<br></td></tr
-><tr
-id=sl_svn4_1229
-
-><td class="source">		ClearSearchSpawn(&amp;ssSpawn);<br></td></tr
-><tr
-id=sl_svn4_1230
-
-><td class="source">		ssSpawn.ZRadius=100;<br></td></tr
-><tr
-id=sl_svn4_1231
-
-><td class="source">		ssSpawn.FRadius=100;<br></td></tr
-><tr
-id=sl_svn4_1232
-
-><td class="source">		for (int i=0; i&lt;50; i++) {<br></td></tr
-><tr
-id=sl_svn4_1233
-
-><td class="source">			if (pSpawn = NthNearestSpawn(&amp;ssSpawn,i,(PSPAWNINFO)pCharSpawn)) if (pSpawn-&gt;Type == SPAWN_PLAYER) {<br></td></tr
-><tr
-id=sl_svn4_1234
-
-><td class="source">				if (!stricmp(SpawnNameZone,pSpawn-&gt;Name)) {<br></td></tr
-><tr
-id=sl_svn4_1235
-
-><td class="source">					MonitorZoneID = GetCharInfo()-&gt;zoneId;<br></td></tr
-><tr
-id=sl_svn4_1236
-
-><td class="source">					MonitorID = pSpawn-&gt;SpawnID;<br></td></tr
-><tr
-id=sl_svn4_1237
-
-><td class="source">					AddWaypoint(MonitorID);<br></td></tr
-><tr
-id=sl_svn4_1238
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1239
-
-><td class="source">					MeMonitorX = GetCharInfo()-&gt;pSpawn-&gt;X; // MeMonitorX monitor your self<br></td></tr
-><tr
-id=sl_svn4_1240
-
-><td class="source">					MeMonitorY = GetCharInfo()-&gt;pSpawn-&gt;Y; // MeMonitorY monitor your self<br></td></tr
-><tr
-id=sl_svn4_1241
-
-><td class="source">					MeMonitorZ = GetCharInfo()-&gt;pSpawn-&gt;Z; // MeMonitorZ monitor your self<br></td></tr
-><tr
-id=sl_svn4_1242
-
-><td class="source">					StuckCheck(true);<br></td></tr
-><tr
-id=sl_svn4_1243
-
-><td class="source">				}<br></td></tr
-><tr
-id=sl_svn4_1244
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_1245
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_1246
-
-><td class="source">		return;<br></td></tr
-><tr
-id=sl_svn4_1247
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_1248
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1249
-
-><td class="source">	if ( DoOpenDoor ) {<br></td></tr
-><tr
-id=sl_svn4_1250
-
-><td class="source">		#define CAMERA_MODE *(int*)(((char*)pinstViewActor)+0x14)<br></td></tr
-><tr
-id=sl_svn4_1251
-
-><td class="source">		if ( (int)CAMERA_MODE != 0 ) {<br></td></tr
-><tr
-id=sl_svn4_1252
-
-><td class="source">			CameraMode = (int)CAMERA_MODE;<br></td></tr
-><tr
-id=sl_svn4_1253
-
-><td class="source">			CAMERA_MODE=0;<br></td></tr
-><tr
-id=sl_svn4_1254
-
-><td class="source">		} else {<br></td></tr
-><tr
-id=sl_svn4_1255
-
-><td class="source">			MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;USE&quot;),0,0);<br></td></tr
-><tr
-id=sl_svn4_1256
-
-><td class="source">			MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;USE&quot;),1,0);<br></td></tr
-><tr
-id=sl_svn4_1257
-
-><td class="source">			MQ2Globals::ExecuteCmd(FindMappableCommand(&quot;USE&quot;),0,0);<br></td></tr
-><tr
-id=sl_svn4_1258
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1259
-
-><td class="source">			if ( CameraMode != 0 ) {<br></td></tr
-><tr
-id=sl_svn4_1260
-
-><td class="source">				CAMERA_MODE = CameraMode;<br></td></tr
-><tr
-id=sl_svn4_1261
-
-><td class="source">				CameraMode = 0;<br></td></tr
-><tr
-id=sl_svn4_1262
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_1263
-
-><td class="source">			DoOpenDoor=false;<br></td></tr
-><tr
-id=sl_svn4_1264
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_1265
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_1266
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1267
-
-><td class="source">	RecordingWaypoints();<br></td></tr
-><tr
-id=sl_svn4_1268
-
-><td class="source">	if (FollowState == FOLLOW_FOLLOWING &amp;&amp; StatusState == STATUS_ON ) FollowSpawn();<br></td></tr
-><tr
-id=sl_svn4_1269
-
-><td class="source">	else if (FollowState == FOLLOW_PLAYING &amp;&amp; StatusState == STATUS_ON ) FollowWaypoints();<br></td></tr
-><tr
-id=sl_svn4_1270
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1271
-
-><td class="source">	StuckCheck();<br></td></tr
-><tr
-id=sl_svn4_1272
-
-><td class="source">	lastClock = (unsigned long)clock();<br></td></tr
-><tr
-id=sl_svn4_1273
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1274
-
-><td class="source">	MeMonitorX = GetCharInfo()-&gt;pSpawn-&gt;X; // MeMonitorX monitor your self<br></td></tr
-><tr
-id=sl_svn4_1275
-
-><td class="source">	MeMonitorY = GetCharInfo()-&gt;pSpawn-&gt;Y; // MeMonitorY monitor your self<br></td></tr
-><tr
-id=sl_svn4_1276
-
-><td class="source">	MeMonitorZ = GetCharInfo()-&gt;pSpawn-&gt;Z; // MeMonitorZ monitor your self<br></td></tr
-><tr
-id=sl_svn4_1277
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1278
-
-><td class="source">	if ( FollowPath.size() ) {<br></td></tr
-><tr
-id=sl_svn4_1279
-
-><td class="source">		list&lt;Position&gt;::iterator CurList=FollowPath.begin();<br></td></tr
-><tr
-id=sl_svn4_1280
-
-><td class="source">		list&lt;Position&gt;::iterator EndList=FollowPath.end();<br></td></tr
-><tr
-id=sl_svn4_1281
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1282
-
-><td class="source">		Position LastList;			// FollowPath<br></td></tr
-><tr
-id=sl_svn4_1283
-
-><td class="source">		<br></td></tr
-><tr
-id=sl_svn4_1284
-
-><td class="source">		if (FollowState == FOLLOW_FOLLOWING) {<br></td></tr
-><tr
-id=sl_svn4_1285
-
-><td class="source">			LastList.Z = GetCharInfo()-&gt;pSpawn-&gt;Z;<br></td></tr
-><tr
-id=sl_svn4_1286
-
-><td class="source">			LastList.Y = GetCharInfo()-&gt;pSpawn-&gt;Y;<br></td></tr
-><tr
-id=sl_svn4_1287
-
-><td class="source">			LastList.X = GetCharInfo()-&gt;pSpawn-&gt;X;<br></td></tr
-><tr
-id=sl_svn4_1288
-
-><td class="source">		} else {<br></td></tr
-><tr
-id=sl_svn4_1289
-
-><td class="source">			LastList.Z = CurList-&gt;Z;<br></td></tr
-><tr
-id=sl_svn4_1290
-
-><td class="source">			LastList.Y = CurList-&gt;Y;<br></td></tr
-><tr
-id=sl_svn4_1291
-
-><td class="source">			LastList.X = CurList-&gt;X;<br></td></tr
-><tr
-id=sl_svn4_1292
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_1293
-
-><td class="source">		MapClear();<br></td></tr
-><tr
-id=sl_svn4_1294
-
-><td class="source">		while(CurList!=EndList) {<br></td></tr
-><tr
-id=sl_svn4_1295
-
-><td class="source">			pFollowPath.push_back(InitLine());<br></td></tr
-><tr
-id=sl_svn4_1296
-
-><td class="source">			if(!pFollowPath[pFollowPath.size()-1]) break;<br></td></tr
-><tr
-id=sl_svn4_1297
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1298
-
-><td class="source">			pFollowPath[pFollowPath.size()-1]-&gt;Layer=3;<br></td></tr
-><tr
-id=sl_svn4_1299
-
-><td class="source">			if ( CurList-&gt;Warping ){<br></td></tr
-><tr
-id=sl_svn4_1300
-
-><td class="source">				pFollowPath[pFollowPath.size()-1]-&gt;Color.ARGB=0xFFFF0000;<br></td></tr
-><tr
-id=sl_svn4_1301
-
-><td class="source">			} else {<br></td></tr
-><tr
-id=sl_svn4_1302
-
-><td class="source">				pFollowPath[pFollowPath.size()-1]-&gt;Color.ARGB=0xFF00FF00;<br></td></tr
-><tr
-id=sl_svn4_1303
-
-><td class="source">			}<br></td></tr
-><tr
-id=sl_svn4_1304
-
-><td class="source">			pFollowPath[pFollowPath.size()-1]-&gt;Start.Z=LastList.Z;<br></td></tr
-><tr
-id=sl_svn4_1305
-
-><td class="source">			pFollowPath[pFollowPath.size()-1]-&gt;End.Z=CurList-&gt;Z;<br></td></tr
-><tr
-id=sl_svn4_1306
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1307
-
-><td class="source">			pFollowPath[pFollowPath.size()-1]-&gt;Start.X=-LastList.X;<br></td></tr
-><tr
-id=sl_svn4_1308
-
-><td class="source">			pFollowPath[pFollowPath.size()-1]-&gt;End.X=-CurList-&gt;X;<br></td></tr
-><tr
-id=sl_svn4_1309
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1310
-
-><td class="source">			pFollowPath[pFollowPath.size()-1]-&gt;Start.Y=-LastList.Y;<br></td></tr
-><tr
-id=sl_svn4_1311
-
-><td class="source">			pFollowPath[pFollowPath.size()-1]-&gt;End.Y=-CurList-&gt;Y;<br></td></tr
-><tr
-id=sl_svn4_1312
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1313
-
-><td class="source">			LastList.Z = CurList-&gt;Z;<br></td></tr
-><tr
-id=sl_svn4_1314
-
-><td class="source">			LastList.Y = CurList-&gt;Y;<br></td></tr
-><tr
-id=sl_svn4_1315
-
-><td class="source">			LastList.X = CurList-&gt;X;<br></td></tr
-><tr
-id=sl_svn4_1316
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1317
-
-><td class="source">			CurList++;<br></td></tr
-><tr
-id=sl_svn4_1318
-
-><td class="source">		}<br></td></tr
-><tr
-id=sl_svn4_1319
-
-><td class="source">	} else if (pFollowPath.size()) {<br></td></tr
-><tr
-id=sl_svn4_1320
-
-><td class="source">		MapClear();<br></td></tr
-><tr
-id=sl_svn4_1321
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_1322
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_1323
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1324
-
-><td class="source">PLUGIN_API VOID OnEndZone(VOID) {<br></td></tr
-><tr
-id=sl_svn4_1325
-
-><td class="source">	DebugSpewAlways(&quot;MQ2AdvPath::OnZoned()&quot;);<br></td></tr
-><tr
-id=sl_svn4_1326
-
-><td class="source">	if( FollowState == FOLLOW_RECORDING &amp;&amp; StatusState &amp;&amp; SavePathName[0] != NULL &amp;&amp; SavePathZone[0] != NULL )<br></td></tr
-><tr
-id=sl_svn4_1327
-
-><td class="source">		SavePath(SavePathName,SavePathZone);<br></td></tr
-><tr
-id=sl_svn4_1328
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1329
-
-><td class="source">	ReadINI();<br></td></tr
-><tr
-id=sl_svn4_1330
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1331
-
-><td class="source">	CreateBinds();<br></td></tr
-><tr
-id=sl_svn4_1332
-
-><td class="source">	if( PathNameZone[0] ) {<br></td></tr
-><tr
-id=sl_svn4_1333
-
-><td class="source">		MonitorZoneID = 0;<br></td></tr
-><tr
-id=sl_svn4_1334
-
-><td class="source">		FollowPath.clear();<br></td></tr
-><tr
-id=sl_svn4_1335
-
-><td class="source">		DoStop();<br></td></tr
-><tr
-id=sl_svn4_1336
-
-><td class="source">		MapClear();<br></td></tr
-><tr
-id=sl_svn4_1337
-
-><td class="source">		StuckCheck(true);<br></td></tr
-><tr
-id=sl_svn4_1338
-
-><td class="source">	} else if( SpawnNameZone[0] ) {<br></td></tr
-><tr
-id=sl_svn4_1339
-
-><td class="source">		WriteChatf(&quot;[MQ2AdvPath] Zoned now wating on (%s)&quot;,SpawnNameZone);<br></td></tr
-><tr
-id=sl_svn4_1340
-
-><td class="source">		FollowPath.clear();<br></td></tr
-><tr
-id=sl_svn4_1341
-
-><td class="source">		DoStop();<br></td></tr
-><tr
-id=sl_svn4_1342
-
-><td class="source">		MapClear();<br></td></tr
-><tr
-id=sl_svn4_1343
-
-><td class="source">		MonitorID = 0;<br></td></tr
-><tr
-id=sl_svn4_1344
-
-><td class="source">		MonitorWarp = false;<br></td></tr
-><tr
-id=sl_svn4_1345
-
-><td class="source">		StuckCheck(true);<br></td></tr
-><tr
-id=sl_svn4_1346
-
-><td class="source">	} else {<br></td></tr
-><tr
-id=sl_svn4_1347
-
-><td class="source">		ClearAll();<br></td></tr
-><tr
-id=sl_svn4_1348
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_1349
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_1350
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1351
-
-><td class="source">PLUGIN_API VOID OnRemoveSpawn(PSPAWNINFO pSpawn) {<br></td></tr
-><tr
-id=sl_svn4_1352
-
-><td class="source">	DebugSpewAlways(&quot;MQ2AdvPath::OnRemoveSpawn(%s)&quot;,pSpawn-&gt;Name);<br></td></tr
-><tr
-id=sl_svn4_1353
-
-><td class="source">	if( pSpawn-&gt;SpawnID == MonitorID ) MonitorID = 0;<br></td></tr
-><tr
-id=sl_svn4_1354
-
-><td class="source">}<br></td></tr
-><tr
-id=sl_svn4_1355
-
-><td class="source"><br></td></tr
-><tr
-id=sl_svn4_1356
-
-><td class="source">PLUGIN_API DWORD OnIncomingChat(PCHAR Line, DWORD Color) {<br></td></tr
-><tr
-id=sl_svn4_1357
-
-><td class="source">	if(!gbInZone || !GetCharInfo() || !GetCharInfo()-&gt;pSpawn) return 0;<br></td></tr
-><tr
-id=sl_svn4_1358
-
-><td class="source">	if(!stricmp(Line,&quot;You have been summoned!&quot;) &amp;&amp; FollowState) {<br></td></tr
-><tr
-id=sl_svn4_1359
-
-><td class="source">		WriteChatf(&quot;[MQ2AdvPath] summon Detected&quot;);<br></td></tr
-><tr
-id=sl_svn4_1360
-
-><td class="source">		ClearAll();<br></td></tr
-><tr
-id=sl_svn4_1361
-
-><td class="source">	} else if(!strnicmp(Line,&quot;You will now auto-follow&quot;,24)) DoLft(true);<br></td></tr
-><tr
-id=sl_svn4_1362
-
-><td class="source">	else if(!strnicmp(Line,&quot;You are no longer auto-follow&quot;,29) || !strnicmp(Line,&quot;You must first target a group member to auto-follow.&quot;,52) ) {<br></td></tr
-><tr
-id=sl_svn4_1363
-
-><td class="source">		if (FollowState) MQFollowCommand(GetCharInfo()-&gt;pSpawn, &quot;off&quot;);	<br></td></tr
-><tr
-id=sl_svn4_1364
-
-><td class="source">		else MQFollowCommand(GetCharInfo()-&gt;pSpawn, &quot;on&quot;);	<br></td></tr
-><tr
-id=sl_svn4_1365
-
-><td class="source">	}<br></td></tr
-><tr
-id=sl_svn4_1366
-
-><td class="source">	return 0;<br></td></tr
-><tr
-id=sl_svn4_1367
-
-><td class="source">}<br></td></tr
-></table></pre>
-<pre class="prettyprint"><table width="100%"><tr class="cursor_stop cursor_hidden"><td></td></tr></table></pre>
-</td>
-</tr></table>
-<script type="text/javascript">
- var lineNumUnderMouse = -1;
- 
- function gutterOver(num) {
- gutterOut();
- var newTR = document.getElementById('gr_svn4_' + num);
- if (newTR) {
- newTR.className = 'undermouse';
- }
- lineNumUnderMouse = num;
- }
- function gutterOut() {
- if (lineNumUnderMouse != -1) {
- var oldTR = document.getElementById(
- 'gr_svn4_' + lineNumUnderMouse);
- if (oldTR) {
- oldTR.className = '';
- }
- lineNumUnderMouse = -1;
- }
- }
- var numsGenState = {table_base_id: 'nums_table_'};
- var srcGenState = {table_base_id: 'src_table_'};
- var alignerRunning = false;
- var startOver = false;
- function setLineNumberHeights() {
- if (alignerRunning) {
- startOver = true;
- return;
- }
- numsGenState.chunk_id = 0;
- numsGenState.table = document.getElementById('nums_table_0');
- numsGenState.row_num = 0;
- srcGenState.chunk_id = 0;
- srcGenState.table = document.getElementById('src_table_0');
- srcGenState.row_num = 0;
- alignerRunning = true;
- continueToSetLineNumberHeights();
- }
- function rowGenerator(genState) {
- if (genState.row_num < genState.table.rows.length) {
- var currentRow = genState.table.rows[genState.row_num];
- genState.row_num++;
- return currentRow;
- }
- var newTable = document.getElementById(
- genState.table_base_id + (genState.chunk_id + 1));
- if (newTable) {
- genState.chunk_id++;
- genState.row_num = 0;
- genState.table = newTable;
- return genState.table.rows[0];
- }
- return null;
- }
- var MAX_ROWS_PER_PASS = 1000;
- function continueToSetLineNumberHeights() {
- var rowsInThisPass = 0;
- var numRow = 1;
- var srcRow = 1;
- while (numRow && srcRow && rowsInThisPass < MAX_ROWS_PER_PASS) {
- numRow = rowGenerator(numsGenState);
- srcRow = rowGenerator(srcGenState);
- rowsInThisPass++;
- if (numRow && srcRow) {
- if (numRow.offsetHeight != srcRow.offsetHeight) {
- numRow.firstChild.style.height = srcRow.offsetHeight + 'px';
- }
- }
- }
- if (rowsInThisPass >= MAX_ROWS_PER_PASS) {
- setTimeout(continueToSetLineNumberHeights, 10);
- } else {
- alignerRunning = false;
- if (startOver) {
- startOver = false;
- setTimeout(setLineNumberHeights, 500);
- }
- }
- }
- // Do 2 complete passes, because there can be races
- // between this code and prettify.
- startOver = true;
- setTimeout(setLineNumberHeights, 250);
- window.onresize = setLineNumberHeights;
-</script>
-
- 
- 
- <div id="log">
- <div style="text-align:right">
- <a class="ifCollapse" href="#" onclick="_toggleMeta('', 'p', 'aenchanter00', this)">Show details</a>
- <a class="ifExpand" href="#" onclick="_toggleMeta('', 'p', 'aenchanter00', this)">Hide details</a>
- </div>
- <div class="ifExpand">
- 
- <div class="pmeta_bubble_bg" style="border:1px solid white">
- <div class="round4"></div>
- <div class="round2"></div>
- <div class="round1"></div>
- <div class="box-inner">
- <div id="changelog">
- <p>Change log</p>
- <div>
- <a href="/p/aenchanter00/source/detail?spec=svn4&r=2">r2</a>
- by aenchanter00
- on Nov 17, 2008
- &nbsp; <a href="/p/aenchanter00/source/diff?spec=svn4&r=2&amp;format=side&amp;path=/trunk/MQ2AdvPath/MQ2AdvPath.cpp&amp;old_path=/trunk/MQ2AdvPath/MQ2AdvPath.cpp&amp;old=">Diff</a>
- </div>
- <pre>Moved from assembla.com</pre>
- </div>
- 
- 
- 
- 
- 
- 
- <script type="text/javascript">
- var detail_url = '/p/aenchanter00/source/detail?r=2&spec=svn4';
- var publish_url = '/p/aenchanter00/source/detail?r=2&spec=svn4#publish';
- // describe the paths of this revision in javascript.
- var changed_paths = [];
- var changed_urls = [];
- 
- changed_paths.push('/trunk/MQ2AdvPath');
- changed_urls.push('/p/aenchanter00/source/browse/trunk/MQ2AdvPath?r\x3d2\x26spec\x3dsvn4');
- 
- 
- changed_paths.push('/trunk/MQ2AdvPath/MQ2AdvPath.cpp');
- changed_urls.push('/p/aenchanter00/source/browse/trunk/MQ2AdvPath/MQ2AdvPath.cpp?r\x3d2\x26spec\x3dsvn4');
- 
- var selected_path = '/trunk/MQ2AdvPath/MQ2AdvPath.cpp';
- 
- 
- changed_paths.push('/trunk/MQ2Cast');
- changed_urls.push('/p/aenchanter00/source/browse/trunk/MQ2Cast?r\x3d2\x26spec\x3dsvn4');
- 
- 
- changed_paths.push('/trunk/MQ2Cast/MQ2Cast.cpp');
- changed_urls.push('/p/aenchanter00/source/browse/trunk/MQ2Cast/MQ2Cast.cpp?r\x3d2\x26spec\x3dsvn4');
- 
- 
- changed_paths.push('/trunk/MQ2CastTimer');
- changed_urls.push('/p/aenchanter00/source/browse/trunk/MQ2CastTimer?r\x3d2\x26spec\x3dsvn4');
- 
- 
- changed_paths.push('/trunk/MQ2CastTimer/MQ2CastTimer.cpp');
- changed_urls.push('/p/aenchanter00/source/browse/trunk/MQ2CastTimer/MQ2CastTimer.cpp?r\x3d2\x26spec\x3dsvn4');
- 
- 
- changed_paths.push('/trunk/MQ2TribSave');
- changed_urls.push('/p/aenchanter00/source/browse/trunk/MQ2TribSave?r\x3d2\x26spec\x3dsvn4');
- 
- 
- changed_paths.push('/trunk/MQ2TribSave/MQ2TribSave.cpp');
- changed_urls.push('/p/aenchanter00/source/browse/trunk/MQ2TribSave/MQ2TribSave.cpp?r\x3d2\x26spec\x3dsvn4');
- 
- 
- changed_paths.push('/trunk/MQ2VoiceCommand');
- changed_urls.push('/p/aenchanter00/source/browse/trunk/MQ2VoiceCommand?r\x3d2\x26spec\x3dsvn4');
- 
- 
- changed_paths.push('/trunk/MQ2VoiceCommand/MQ2VoiceCommand.cpp');
- changed_urls.push('/p/aenchanter00/source/browse/trunk/MQ2VoiceCommand/MQ2VoiceCommand.cpp?r\x3d2\x26spec\x3dsvn4');
- 
- 
- function getCurrentPageIndex() {
- for (var i = 0; i < changed_paths.length; i++) {
- if (selected_path == changed_paths[i]) {
- return i;
- }
- }
- }
- function getNextPage() {
- var i = getCurrentPageIndex();
- if (i < changed_paths.length - 1) {
- return changed_urls[i + 1];
- }
- return null;
- }
- function getPreviousPage() {
- var i = getCurrentPageIndex();
- if (i > 0) {
- return changed_urls[i - 1];
- }
- return null;
- }
- function gotoNextPage() {
- var page = getNextPage();
- if (!page) {
- page = detail_url;
- }
- window.location = page;
- }
- function gotoPreviousPage() {
- var page = getPreviousPage();
- if (!page) {
- page = detail_url;
- }
- window.location = page;
- }
- function gotoDetailPage() {
- window.location = detail_url;
- }
- function gotoPublishPage() {
- window.location = publish_url;
- }
-</script>
-
- 
- <style type="text/css">
- #review_nav {
- border-top: 3px solid white;
- padding-top: 6px;
- margin-top: 1em;
- }
- #review_nav td {
- vertical-align: middle;
- }
- #review_nav select {
- margin: .5em 0;
- }
- </style>
- <div id="review_nav">
- <table><tr><td>Go to:&nbsp;</td><td>
- <select name="files_in_rev" onchange="window.location=this.value">
- 
- <option value="/p/aenchanter00/source/browse/trunk/MQ2AdvPath?r=2&amp;spec=svn4"
- 
- >/trunk/MQ2AdvPath</option>
- 
- <option value="/p/aenchanter00/source/browse/trunk/MQ2AdvPath/MQ2AdvPath.cpp?r=2&amp;spec=svn4"
- selected="selected"
- >/trunk/MQ2AdvPath/MQ2AdvPath.cpp</option>
- 
- <option value="/p/aenchanter00/source/browse/trunk/MQ2Cast?r=2&amp;spec=svn4"
- 
- >/trunk/MQ2Cast</option>
- 
- <option value="/p/aenchanter00/source/browse/trunk/MQ2Cast/MQ2Cast.cpp?r=2&amp;spec=svn4"
- 
- >/trunk/MQ2Cast/MQ2Cast.cpp</option>
- 
- <option value="/p/aenchanter00/source/browse/trunk/MQ2CastTimer?r=2&amp;spec=svn4"
- 
- >/trunk/MQ2CastTimer</option>
- 
- <option value="/p/aenchanter00/source/browse/trunk/MQ2CastTimer/MQ2CastTimer.cpp?r=2&amp;spec=svn4"
- 
- >...nk/MQ2CastTimer/MQ2CastTimer.cpp</option>
- 
- <option value="/p/aenchanter00/source/browse/trunk/MQ2TribSave?r=2&amp;spec=svn4"
- 
- >/trunk/MQ2TribSave</option>
- 
- <option value="/p/aenchanter00/source/browse/trunk/MQ2TribSave/MQ2TribSave.cpp?r=2&amp;spec=svn4"
- 
- >/trunk/MQ2TribSave/MQ2TribSave.cpp</option>
- 
- <option value="/p/aenchanter00/source/browse/trunk/MQ2VoiceCommand?r=2&amp;spec=svn4"
- 
- >/trunk/MQ2VoiceCommand</option>
- 
- <option value="/p/aenchanter00/source/browse/trunk/MQ2VoiceCommand/MQ2VoiceCommand.cpp?r=2&amp;spec=svn4"
- 
- >...VoiceCommand/MQ2VoiceCommand.cpp</option>
- 
- </select>
- </td></tr></table>
- 
- 
- 
-
-
-
- 
- </div>
- 
- 
- </div>
- <div class="round1"></div>
- <div class="round2"></div>
- <div class="round4"></div>
- </div>
- <div class="pmeta_bubble_bg" style="border:1px solid white">
- <div class="round4"></div>
- <div class="round2"></div>
- <div class="round1"></div>
- <div class="box-inner">
- <div id="older_bubble">
- <p>Older revisions</p>
- 
- <a href="/p/aenchanter00/source/list?path=/trunk/MQ2AdvPath/MQ2AdvPath.cpp&start=2">All revisions of this file</a>
- </div>
- </div>
- <div class="round1"></div>
- <div class="round2"></div>
- <div class="round4"></div>
- </div>
- <div class="pmeta_bubble_bg" style="border:1px solid white">
- <div class="round4"></div>
- <div class="round2"></div>
- <div class="round1"></div>
- <div class="box-inner">
- <div id="fileinfo_bubble">
- <p>File info</p>
- 
- <div>Size: 43232 bytes,
- 1367 lines</div>
- 
- <div><a href="http://aenchanter00.googlecode.com/svn/trunk/MQ2AdvPath/MQ2AdvPath.cpp">View raw file</a></div>
- </div>
- 
- <div id="props">
- <p>File properties</p>
- <dl>
- 
- <dt>svn:eol-style</dt>
- <dd>native</dd>
- 
- </dl>
- </div>
- 
- </div>
- <div class="round1"></div>
- <div class="round2"></div>
- <div class="round4"></div>
- </div>
- </div>
- </div>
-
-
-</div>
-
-</div>
-</div>
-
-<script src="http://www.gstatic.com/codesite/ph/3463025281934143195/js/prettify/prettify.js"></script>
-<script type="text/javascript">prettyPrint();</script>
-
-
-<script src="http://www.gstatic.com/codesite/ph/3463025281934143195/js/source_file_scripts.js"></script>
-
- <script type="text/javascript" src="http://kibbles.googlecode.com/files/kibbles-1.3.3.comp.js"></script>
- <script type="text/javascript">
- var lastStop = null;
- var initilized = false;
- 
- function updateCursor(next, prev) {
- if (prev && prev.element) {
- prev.element.className = 'cursor_stop cursor_hidden';
- }
- if (next && next.element) {
- next.element.className = 'cursor_stop cursor';
- lastStop = next.index;
- }
- }
- 
- function pubRevealed(data) {
- updateCursorForCell(data.cellId, 'cursor_stop cursor_hidden');
- if (initilized) {
- reloadCursors();
- }
- }
- 
- function draftRevealed(data) {
- updateCursorForCell(data.cellId, 'cursor_stop cursor_hidden');
- if (initilized) {
- reloadCursors();
- }
- }
- 
- function draftDestroyed(data) {
- updateCursorForCell(data.cellId, 'nocursor');
- if (initilized) {
- reloadCursors();
- }
- }
- function reloadCursors() {
- kibbles.skipper.reset();
- loadCursors();
- if (lastStop != null) {
- kibbles.skipper.setCurrentStop(lastStop);
- }
- }
- // possibly the simplest way to insert any newly added comments
- // is to update the class of the corresponding cursor row,
- // then refresh the entire list of rows.
- function updateCursorForCell(cellId, className) {
- var cell = document.getElementById(cellId);
- // we have to go two rows back to find the cursor location
- var row = getPreviousElement(cell.parentNode);
- row.className = className;
- }
- // returns the previous element, ignores text nodes.
- function getPreviousElement(e) {
- var element = e.previousSibling;
- if (element.nodeType == 3) {
- element = element.previousSibling;
- }
- if (element && element.tagName) {
- return element;
- }
- }
- function loadCursors() {
- // register our elements with skipper
- var elements = CR_getElements('*', 'cursor_stop');
- var len = elements.length;
- for (var i = 0; i < len; i++) {
- var element = elements[i]; 
- element.className = 'cursor_stop cursor_hidden';
- kibbles.skipper.append(element);
- }
- }
- function toggleComments() {
- CR_toggleCommentDisplay();
- reloadCursors();
- }
- function keysOnLoadHandler() {
- // setup skipper
- kibbles.skipper.addStopListener(
- kibbles.skipper.LISTENER_TYPE.PRE, updateCursor);
- // Set the 'offset' option to return the middle of the client area
- // an option can be a static value, or a callback
- kibbles.skipper.setOption('padding_top', 50);
- // Set the 'offset' option to return the middle of the client area
- // an option can be a static value, or a callback
- kibbles.skipper.setOption('padding_bottom', 100);
- // Register our keys
- kibbles.skipper.addFwdKey("n");
- kibbles.skipper.addRevKey("p");
- kibbles.keys.addKeyPressListener(
- 'u', function() { window.location = detail_url; });
- kibbles.keys.addKeyPressListener(
- 'r', function() { window.location = detail_url + '#publish'; });
- 
- kibbles.keys.addKeyPressListener('j', gotoNextPage);
- kibbles.keys.addKeyPressListener('k', gotoPreviousPage);
- 
- 
- }
- </script>
-<script src="http://www.gstatic.com/codesite/ph/3463025281934143195/js/code_review_scripts.js"></script>
-<script type="text/javascript">
- 
- // the comment form template
- var form = '<div class="draft"><div class="header"><span class="title">Draft comment:</span></div>' +
- '<div class="body"><form onsubmit="return false;"><textarea id="$ID">$BODY</textarea><br>$ACTIONS</form></div>' +
- '</div>';
- // the comment "plate" template used for both draft and published comment "plates".
- var draft_comment = '<div class="draft" ondblclick="$ONDBLCLICK">' +
- '<div class="header"><span class="title">Draft comment:</span><span class="actions">$ACTIONS</span></div>' +
- '<pre id="$ID" class="body">$BODY</pre>' +
- '</div>';
- var published_comment = '<div class="published">' +
- '<div class="header"><span class="title"><a href="$PROFILE_URL">$AUTHOR:</a></span><div>' +
- '<pre id="$ID" class="body">$BODY</pre>' +
- '</div>';
-
- function showPublishInstructions() {
- var element = document.getElementById('review_instr');
- if (element) {
- element.className = 'opened';
- }
- }
- function revsOnLoadHandler() {
- // register our source container with the commenting code
- var paths = {'svn4': '/trunk/MQ2AdvPath/MQ2AdvPath.cpp'}
- CR_setup('', 'p', 'aenchanter00', '', 'svn4', paths,
- 'c8929d14f258b146753cc4bc49e596bb', CR_BrowseIntegrationFactory);
- // register our hidden ui elements with the code commenting code ui builder.
- CR_registerLayoutElement('form', form);
- CR_registerLayoutElement('draft_comment', draft_comment);
- CR_registerLayoutElement('published_comment', published_comment);
- 
- CR_registerActivityListener(CR_ACTIVITY_TYPE.REVEAL_DRAFT_PLATE, showPublishInstructions);
- 
- CR_registerActivityListener(CR_ACTIVITY_TYPE.REVEAL_PUB_PLATE, pubRevealed);
- CR_registerActivityListener(CR_ACTIVITY_TYPE.REVEAL_DRAFT_PLATE, draftRevealed);
- CR_registerActivityListener(CR_ACTIVITY_TYPE.DISCARD_DRAFT_COMMENT, draftDestroyed);
- 
- 
- 
- 
- 
- 
- 
- var initilized = true;
- reloadCursors();
- }
- window.onload = function() {keysOnLoadHandler(); revsOnLoadHandler();};
-
-</script>
-<script type="text/javascript" src="http://www.gstatic.com/codesite/ph/3463025281934143195/js/dit_scripts.js"></script>
-
- 
- 
- <script type="text/javascript" src="http://www.gstatic.com/codesite/ph/3463025281934143195/js/core_scripts_20081103.js"></script>
- <script type="text/javascript" src="/js/codesite_product_dictionary_ph.pack.04102009.js"></script>
- </div>
-<div id="footer" dir="ltr">
- 
- <div class="text">
- 
- &copy;2010 Google -
- <a href="/projecthosting/terms.html">Terms</a> -
- <a href="http://www.google.com/privacy.html">Privacy</a> -
- <a href="/p/support/">Project Hosting Help</a>
- 
- </div>
-</div>
-
- <div class="hostedBy" style="margin-top: -20px;">
- <span style="vertical-align: top;">Powered by <a href="http://code.google.com/projecthosting/">Google Project Hosting</a></span>
- </div>
- 
- 
-
-
- 
- </body>
-</html>
-
+inline void DeleteLine(PMAPLINE pLine) {
+  typedef VOID (__cdecl *DeleteLineCALL) (PMAPLINE);
+  PMQPLUGIN pLook=pPlugins;
+  while(pLook && stricmp(pLook->szFilename,"MQ2Map")) pLook=pLook->pNext;
+  if(pLook)
+          if(DeleteLineCALL Request=(DeleteLineCALL)GetProcAddress(pLook->hModule,"MQ2MapDeleteLine"))
+                  Request(pLine);
+}
+
+void MapClear() {
+        if (pFollowPath.size()) {
+                for (unsigned long i=0; i<(unsigned long)pFollowPath.size(); i++) DeleteLine(pFollowPath[i]);
+                pFollowPath.clear();
+        }
+}
+
+bool BardClass() {
+  return (strncmp(pEverQuest->GetClassDesc(GetCharInfo2()->Class & 0xFF),"Bard",5))?false:true;
+}
+
+/*
+//      Ingame commands:
+//      /afollow    # Follow's your Target
+*/
+VOID MQFollowCommand(PSPAWNINFO pChar, PCHAR szLine) {
+        DebugSpewAlways("MQ2AdvPath::MQFollowCommand()");
+        if(!gbInZone || !GetCharInfo() || !GetCharInfo()->pSpawn) return;
+        bool doFollow = false;
+        bool doFollowZone = false;
+        bool doAutoOpenDoor = true;
+        long MyTarget=(pTarget)?((long)((PSPAWNINFO)pTarget)->SpawnID):0;
+
+        if ( szLine[0]==0 ) {
+                if(MonitorID || FollowPath.size()) {
+                        ClearAll();
+                        return;
+                } else {
+                        doFollow = true;
+                }
+        } else {
+                long iParm=0;
+                do {
+                        GetArg(Buffer,szLine,++iParm);
+                        if(Buffer[0]==0) break;
+                        if(!strnicmp(Buffer,"on",2)) {
+                                doFollow = true;
+                        } else if(!strnicmp(Buffer,"off",3)) {
+                                ClearAll();
+                                return;
+                        } else if(!strnicmp(Buffer,"pause",5)) {
+                                WriteChatf("[MQ2AdvPath] Follow Paused");
+                                DoStop();
+                                StatusState = STATUS_PAUSED;
+                                return;
+                        } else if(!strnicmp(Buffer,"unpause",7)) {
+                                WriteChatf("[MQ2AdvPath] Follow UnPaused");
+                                StatusState = STATUS_ON;
+                                StuckCheck(true);
+                                return;
+                        } else if(!strnicmp(Buffer,"spawn",5)) {
+                                GetArg(Buffer,szLine,++iParm);
+                                MyTarget = atol(Buffer);
+                                doFollow = true;
+                        } else if(!strnicmp(Buffer,"nodoor",6)) {
+                                doAutoOpenDoor = false;
+                                doFollow = true;
+                        } else if(!strnicmp(Buffer,"door",4)) {
+                                doAutoOpenDoor = true;
+                                doFollow = true;
+                        } else if(!strnicmp(Buffer,"nozone",6)) {
+                                doFollowZone = false;
+                                doFollow = true;
+                        } else if(!strnicmp(Buffer,"zone",4)) {
+                                doFollowZone = true;
+                                doFollow = true;
+                        } else if(!strnicmp(Buffer,"loadini",7)) {
+                                ReadINI();
+                        } else {
+                                if( atol(Buffer) ) {
+                                        if( atol(Buffer) < 1 ) FollowSpawnDistance = 1;
+                                        else FollowSpawnDistance = atol(Buffer);
+                                }
+                        }
+                }
+                while(true);
+        }
+        if( doFollow ) {
+                ClearAll();
+                if(MyTarget == GetCharInfo()->pSpawn->SpawnID) MonitorID = 0;
+                else MonitorID = MyTarget;
+
+                if(PSPAWNINFO pSpawn = (PSPAWNINFO)GetSpawnByID(MonitorID)) {
+                        AutoOpenDoor = doAutoOpenDoor;
+                        AddWaypoint(MonitorID);
+                        FollowState = FOLLOW_FOLLOWING;
+                        StatusState = STATUS_ON;
+                        WriteChatf("[MQ2AdvPath] Following %s", pSpawn->Name);
+
+                        if( doFollowZone ) {
+                                strcpy(SpawnNameZone,pSpawn->Name);
+                                MonitorZoneID = GetCharInfo()->zoneId;
+                        }
+
+                        MeMonitorX = GetCharInfo()->pSpawn->X; // MeMonitorX monitor your self
+                        MeMonitorY = GetCharInfo()->pSpawn->Y; // MeMonitorY monitor your self
+                        MeMonitorZ = GetCharInfo()->pSpawn->Z; // MeMonitorZ monitor your self
+                }
+        }
+}
+
+VOID MQPlayCommand(PSPAWNINFO pChar, PCHAR szLine) {
+        if(!gbInZone || !GetCharInfo() || !GetCharInfo()->pSpawn) return;
+        DebugSpewAlways("MQ2AdvPath::MQPlayCommand()");
+        bool doPlay = false;
+        bool doPlayZone = false;
+        float doPlaySmart = 0.00;
+        char pathName[MAX_STRING] = {NULL};
+
+        long iParm=0;
+        do {
+                GetArg(Buffer,szLine,++iParm);
+                if(Buffer[0]==0) break;
+                if(!strnicmp(Buffer,"off",3)) {
+                        ClearAll();
+                        return;
+                } else if(!strnicmp(Buffer,"pause",5)) {
+                        WriteChatf("[MQ2AdvPath] Playing Paused");
+                        DoStop();
+                        StatusState = STATUS_PAUSED;
+                } else if(!strnicmp(Buffer,"unpause",7)) {
+                        WriteChatf("[MQ2AdvPath] Playing UnPaused");
+                        StatusState = STATUS_ON;
+                        StuckCheck(true);
+                } else if(!strnicmp(Buffer,"loop",4)) {
+                        PlayLoop = true;
+                } else if(!strnicmp(Buffer,"noloop",6)) {
+                        PlayLoop = false;
+                } else if(!strnicmp(Buffer,"reverse",7)) PlayReverse = true;
+                else if(!strnicmp(Buffer,"normal",6)) PlayReverse = false;
+                else if(!strnicmp(Buffer,"smart",5)) doPlaySmart = 100000.00;
+                else if(!strnicmp(Buffer,"nosmart",7)) doPlaySmart = 0.00;
+                else if(!strnicmp(Buffer,"nodoor",6)) AutoOpenDoor = false;
+                else if(!strnicmp(Buffer,"door",4)) AutoOpenDoor = true;
+                else if(!strnicmp(Buffer,"nozone",6)) doPlayZone = false;
+                else if(!strnicmp(Buffer,"zone",4)) doPlayZone = true;
+                else if(!strnicmp(Buffer,"loadini",7)) ReadINI();
+                else {
+                        if( !FollowPath.size() && FollowState == FOLLOW_OFF ) {
+                                ClearAll();
+                                strcpy(pathName,Buffer);
+                                LoadPath(Buffer);
+                                if(FollowPath.size()) {
+                                        WriteChatf("[MQ2AdvPath] Playing Path: %s",Buffer);
+                                        FollowState = FOLLOW_PLAYING;
+                                        StatusState = STATUS_ON;
+                                        doPlay = true;
+                                } else {
+                                        WriteChatf("[MQ2AdvPath] Playing Path: %s Failed",Buffer);
+                                }
+                        }
+                }
+        }
+        while(true);
+        if( doPlayZone && doPlay ) {
+                strcpy(PathNameZone,pathName);
+                MonitorZoneID = GetCharInfo()->zoneId;
+        }
+
+        if(doPlay) FollowWaypointsInit(doPlaySmart);
+}
+
+VOID MQRecordCommand(PSPAWNINFO pChar, PCHAR szLine) {
+        if(!gbInZone || !GetCharInfo() || !GetCharInfo()->pSpawn) return;
+        DebugSpewAlways("MQ2AdvPath::MQPlayCommand()");
+
+        bool doSave = false;
+        bool doSaveAll = false;
+
+        long iParm=0;
+        GetArg(Buffer,szLine,++iParm);
+
+        if(!strnicmp(Buffer,"save",4)) {
+                if(FollowState == FOLLOW_RECORDING && StatusState ) {
+                        if(!strnicmp(Buffer,"saveall",7)) doSaveAll = true;
+                        GetArg(Buffer,szLine,++iParm);
+                        if(Buffer[0]!= NULL) {
+                                strcpy(SavePathName,Buffer);
+                                strcpy(SavePathZone,GetShortZone(GetCharInfo()->zoneId));
+                        }
+                        doSave = true;
+                }
+        } else if(!strnicmp(Buffer,"checkpoint",10)) {
+                GetArg(Buffer,szLine,++iParm);
+                if(Buffer[0]==0) return;
+                if ( FollowPath.size() && FollowState == FOLLOW_RECORDING ) {
+                        int i = 1;
+                        list<Position>::iterator CurList=FollowPath.begin();
+                        list<Position>::iterator EndList=FollowPath.end();
+                        while(CurList!=EndList) {
+                                if( FollowPath.size() == i ) {
+                                        strcpy(CurList->CheckPoint,Buffer);
+                                        return;
+                                }
+                                i++;
+                                CurList++;
+                        }
+                }
+        } else {
+                ClearAll();
+                //              GetArg(Buffer,szLine,++iParm);
+                if(Buffer[0]==0) {
+                        SavePathZone[0] = NULL;
+                        SavePathName[0] = NULL;
+                } else {
+                        strcpy(SavePathName,Buffer);
+                        strcpy(SavePathZone,GetShortZone(GetCharInfo()->zoneId));
+                }
+
+                WriteChatf("[MQ2AdvPath] Recording Path: %s Zone: %s",SavePathName,SavePathZone);
+                MonitorID = GetCharInfo()->pSpawn->SpawnID;
+                AddWaypoint(MonitorID);
+                FollowState = FOLLOW_RECORDING;
+                StatusState = STATUS_ON;
+                MeMonitorX = GetCharInfo()->pSpawn->X; // MeMonitorX monitor your self
+                MeMonitorY = GetCharInfo()->pSpawn->Y; // MeMonitorY monitor your self
+                MeMonitorZ = GetCharInfo()->pSpawn->Z; // MeMonitorZ monitor your self
+        }
+        if( doSave && SavePathName[0]  && SavePathZone[0] != NULL ) {
+                SavePath(SavePathName,SavePathZone,doSaveAll);
+        }
+}
+
+//Movement Related Functions
+void ReleaseKeys() {
+        DoWalk(false);
+        DoFwd(false);
+        DoBck(false);
+        DoRgt(false);
+        DoLft(false);
+}
+
+void MQCheckFollowCommand(PCHAR Name, BOOL Down) {
+        if(StatusState == STATUS_ON) {
+                if (FollowState == FOLLOW_FOLLOWING && AutoStopFollow) {
+                        if (AutoStopFollow == 1) {
+                                WriteChatf("[MQ2AdvPath] Follow Paused");
+                                StatusState = STATUS_PAUSED;
+                                ReleaseKeys();
+                        } else ClearAll();
+                } else if (FollowState == FOLLOW_PLAYING && AutoStopPath) {
+                        if (AutoStopPath == 1) {
+                                WriteChatf("[MQ2AdvPath] Playing Paused");
+                                StatusState = STATUS_PAUSED;
+                                ReleaseKeys();
+                        }else ClearAll();
+                }
+        }
+    return;
+} 
+
+void DoWalk(bool walk) {
+        bool state_walking = (*EQADDR_RUNWALKSTATE) ? false : true;
+        float SpeedMultiplier = *((float*) &(((PSPAWNINFO) pLocalPlayer)->SpeedMultiplier));
+        if (SpeedMultiplier < 0) walk = false; // we're snared, dont go into walk mode no matter what
+        if ( (walk && !state_walking) || (!walk && state_walking) ) {
+                MQ2Globals::ExecuteCmd(FindMappableCommand("run_walk"),1,0);
+                MQ2Globals::ExecuteCmd(FindMappableCommand("run_walk"),0,0);
+        }
+}
+
+void DoFwd(bool hold, bool walk) {
+        static bool held = false;
+        if ( hold ) {
+                if( GetCharInfo()->pSpawn->CastingData.SpellID != -1 && !BardClass() ) return;
+                DoWalk(walk);
+                DoBck(false);
+                if (!held) MQ2Globals::ExecuteCmd(FindMappableCommand("forward"),1,0);
+                held = true;
+        } else {
+                DoWalk(false);
+                if (held) MQ2Globals::ExecuteCmd(FindMappableCommand("forward"),0,0);
+                held = false;
+        }
+}
+
+void DoBck(bool hold) {
+        static bool held = false;
+        if( hold ) {
+                DoFwd(false);
+                if (!held) MQ2Globals::ExecuteCmd(FindMappableCommand("back"),1,0);
+                held = true;
+        } else {
+                if (held) MQ2Globals::ExecuteCmd(FindMappableCommand("back"),0,0);
+                held = false;
+        }
+}
+
+void DoLft(bool hold) {
+        static bool held = false;
+        if( hold ) {
+                DoRgt(false);
+                if (!held) MQ2Globals::ExecuteCmd(FindMappableCommand("strafe_left"),1,0);
+                held = true;
+        } else {
+                if (held) MQ2Globals::ExecuteCmd(FindMappableCommand("strafe_left"),0,0);
+                held = false;
+        }
+}
+
+void DoRgt(bool hold) {
+        static bool held = false;
+        if( hold ) {
+                DoLft(false);
+                if (!held) MQ2Globals::ExecuteCmd(FindMappableCommand("strafe_right"),1,0);
+                held = true;
+        } else {
+                if (held) MQ2Globals::ExecuteCmd(FindMappableCommand("strafe_right"),0,0);
+                held = false;
+        }
+}
+
+void DoStop() {
+        if ( !FollowIdle ) FollowIdle = (long)clock();
+        DoBck(true);
+        ReleaseKeys();
+}
+
+void LookAt(FLOAT X,FLOAT Y,FLOAT Z) {
+        gFaceAngle = ( atan2(X - GetCharInfo()->pSpawn->X, Y - GetCharInfo()->pSpawn->Y)  * 256.0f / PI);
+        if (gFaceAngle>=512.0f) gFaceAngle -= 512.0f;
+        if (gFaceAngle<0.0f) gFaceAngle += 512.0f;
+        ((PSPAWNINFO)pCharSpawn)->Heading = (FLOAT)gFaceAngle;
+        gFaceAngle=10000.0f;
+
+        if (GetCharInfo()->pSpawn->UnderWater==5 || GetCharInfo()->pSpawn->FeetWet==5) GetCharInfo()->pSpawn->CameraAngle = (FLOAT)( atan2(Z - GetCharInfo()->pSpawn->Z, (FLOAT)GetDistance(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y, X,Y)) * 256.0f / PI);
+        else if (GetCharInfo()->pSpawn->Levitate==2) {
+                if ( Z < GetCharInfo()->pSpawn->Z-5) GetCharInfo()->pSpawn->CameraAngle = -45.0f;
+                else if ( Z > GetCharInfo()->pSpawn->Z+5) GetCharInfo()->pSpawn->CameraAngle = 45.0f;
+                else GetCharInfo()->pSpawn->CameraAngle = 0.0f;
+        } else GetCharInfo()->pSpawn->CameraAngle = 0.0f;
+        gLookAngle=10000.0f;
+}
+
+VOID ClearAll() {
+        if( MonitorID || FollowPath.size() ) WriteChatf("[MQ2AdvPath] Stopped");
+        FollowPath.clear();
+        NextClickDoor = PauseDoor = FollowIdle = MonitorID = 0;
+        DoStop();
+
+        FollowState = FOLLOW_OFF;               // Active?
+        StatusState = STATUS_OFF;               // Active?
+        MonitorWarp = PlayReverse = PlayLoop = false;
+        MonitorZoneID = 0;
+
+        AutoOpenDoor = true;
+
+        SavePathZone[0] = NULL;
+        SavePathName[0] = NULL;
+        PathNameZone[0] = NULL;
+        SpawnNameZone[0] = NULL;
+
+        MapClear();
+
+        StuckCheck(true);
+}
+
+VOID ClearOne(list<Position>::iterator &CurList) {
+        list<Position>::iterator PosList;
+        PosList=CurList;
+        CurList++;
+        FollowPath.erase(PosList);
+}
+
+void CreateBinds() {
+        if(!gbInZone || !GetCharInfo() || !GetCharInfo()->pSpawn || MoveBindsLoaded) return;
+        MoveBindsLoaded = true;
+        AddMQ2KeyBind("STOP_BCK",MQCheckFollowCommand); 
+        AddMQ2KeyBind("STOP_LFT",MQCheckFollowCommand); 
+        AddMQ2KeyBind("STOP_RGT",MQCheckFollowCommand); 
+        AddMQ2KeyBind("STOP_STRAFE_LFT",MQCheckFollowCommand); 
+        AddMQ2KeyBind("STOP_STRAFE_RGT",MQCheckFollowCommand); 
+        SetMQ2KeyBind("STOP_BCK",false,pKeypressHandler->NormalKey[FindMappableCommand("back")]); 
+        SetMQ2KeyBind("STOP_BCK",true,pKeypressHandler->AltKey[FindMappableCommand("back")]); 
+        SetMQ2KeyBind("STOP_LFT",false,pKeypressHandler->NormalKey[FindMappableCommand("left")]); 
+        SetMQ2KeyBind("STOP_LFT",true,pKeypressHandler->AltKey[FindMappableCommand("left")]); 
+        SetMQ2KeyBind("STOP_RGT",false,pKeypressHandler->NormalKey[FindMappableCommand("right")]); 
+        SetMQ2KeyBind("STOP_RGT",true,pKeypressHandler->AltKey[FindMappableCommand("right")]); 
+        SetMQ2KeyBind("STOP_STRAFE_LFT",false,pKeypressHandler->NormalKey[FindMappableCommand("strafe_left")]); 
+        SetMQ2KeyBind("STOP_STRAFE_LFT",true,pKeypressHandler->AltKey[FindMappableCommand("strafe_left")]); 
+        SetMQ2KeyBind("STOP_STRAFE_RGT",false,pKeypressHandler->NormalKey[FindMappableCommand("strafe_right")]); 
+        SetMQ2KeyBind("STOP_STRAFE_RGT",true,pKeypressHandler->AltKey[FindMappableCommand("strafe_right")]); 
+} 
+
+void DestroyBinds() {
+        if (!MoveBindsLoaded) return;
+        RemoveMQ2KeyBind("STOP_BCK"); 
+        RemoveMQ2KeyBind("STOP_LFT"); 
+        RemoveMQ2KeyBind("STOP_RGT"); 
+        RemoveMQ2KeyBind("STOP_STRAFE_LFT"); 
+        RemoveMQ2KeyBind("STOP_STRAFE_RGT"); 
+}
+
+VOID AddWaypoint(long SpawnID,bool Warping) {
+        if( PSPAWNINFO pSpawn = (PSPAWNINFO)GetSpawnByID(SpawnID) ) {
+                Position MonitorPosition;
+
+                MonitorPosition.Warping = Warping;
+
+                MonitorPosition.X = MonitorX = pSpawn->X;
+                MonitorPosition.Y = MonitorY = pSpawn->Y;
+                MonitorPosition.Z = MonitorZ = pSpawn->Z;
+                MonitorPosition.Heading = MonitorHeading = pSpawn->Heading;
+                strcpy(MonitorPosition.CheckPoint,"");
+
+                FollowPath.push_back(MonitorPosition);
+        }
+}
+
+PDOOR ClosestDoor() {
+        PDOORTABLE pDoorTable = (PDOORTABLE)pSwitchMgr;
+        FLOAT Distance = 100000.00;
+        PDOOR pDoor = NULL;
+        for (DWORD Count=0; Count<pDoorTable->NumEntries; Count++) {
+                if( Distance > GetDistance3D(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,GetCharInfo()->pSpawn->Z,pDoorTable->pDoor[Count]->DefaultX,pDoorTable->pDoor[Count]->DefaultY,pDoorTable->pDoor[Count]->DefaultZ) ) {
+                        Distance = GetDistance3D(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,GetCharInfo()->pSpawn->Z,pDoorTable->pDoor[Count]->DefaultX,pDoorTable->pDoor[Count]->DefaultY,pDoorTable->pDoor[Count]->DefaultZ);
+                        pDoor = pDoorTable->pDoor[Count];
+                }
+        }
+        return pDoor;
+}
+
+bool IsOpenDoor( PDOOR pDoor ) {
+        if(pDoor->DefaultHeading!=pDoor->Heading || pDoor->Y!=pDoor->DefaultY || pDoor->X!=pDoor->DefaultX  || pDoor->Z!=pDoor->DefaultZ )return true;
+        return false;
+}
+
+VOID OpenDoor() {
+        if(!AutoOpenDoor) return;
+
+        if(PDOOR pDoor = (PDOOR)ClosestDoor()) {
+                if(!IsOpenDoor(pDoor) && NextClickDoor < (long)clock()) {
+                        if( GetDistance3D(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,GetCharInfo()->pSpawn->Z,pDoor->DefaultX,pDoor->DefaultY,pDoor->DefaultZ) <  DISTANCE_OPEN_DOOR_CLOSE ) {
+                                if( InFront(pDoor->X,pDoor->Y, ANGEL_OPEN_DOOR_CLOSE,false) ) {
+                                        DoOpenDoor = true;
+                                        NextClickDoor = (long)clock() + 100;
+                                        if ((PauseDoor - (long)clock()) < 0) {
+                                                PauseDoor = (long)clock() + 1000;
+                                                DoStop();
+                                        }
+                                }
+                        } else if( GetDistance3D(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,GetCharInfo()->pSpawn->Z,pDoor->DefaultX,pDoor->DefaultY,pDoor->DefaultZ) <  DISTANCE_OPEN_DOOR_LONG ) {
+                                if( InFront(pDoor->X,pDoor->Y, ANGEL_OPEN_DOOR_LONG,false) ) {
+                                        DoOpenDoor = true;
+                                        NextClickDoor = (long)clock() + 100;
+                                }
+                        }
+                }
+        }
+}
+
+bool InFront(float X,float Y, float Angel, bool Reverse) {
+        FLOAT Angle = (FLOAT)((atan2f(X - GetCharInfo()->pSpawn->X, Y - GetCharInfo()->pSpawn->Y) * 180.0f / PI));
+        if(Angle<0)     Angle +=360;
+        Angle = Angle*1.42f;
+
+        if(Reverse) {
+                if( Angle + 256 > 512 ) {
+                        Angle = Angle-256;
+                } else if( Angle - 256 < 0 ) {
+                        Angle = Angle+256;
+                }
+        }
+
+        bool Low = false;
+        bool High = false;
+
+        FLOAT Angle1 = GetCharInfo()->pSpawn->Heading - Angel;
+        if(Angle1<0) {
+                Low = true;
+                Angle1 +=512.0f;
+        }
+
+        FLOAT Angle2 = GetCharInfo()->pSpawn->Heading + Angel;
+        if(Angle2>512.0f) {
+                High = true;
+                Angle2 -=512.0f;
+        }
+
+        if( Low ) {
+                if( Angle1 < (Angle + 512.0f) && Angle2 > Angle ) return true;
+        } else if( High ) {
+                if( Angle1 < Angle && Angle2 > (Angle - 512.0f) ) return true;
+        } else if( Angle1 < Angle && Angle2 > Angle ) {
+                return true;
+        }
+
+//      if( Angle1 < Angle && Angle2 > Angle ) return true;
+        return false;
+}
+
+VOID SavePath( PCHAR PathName, PCHAR PathZone, bool SaveAll ) {
+        WriteChatf("[MQ2AdvPath] Saveing Path: %s Zone: %s",PathName,PathZone);
+        CHAR INIFileNameTemp[400];
+        char szTemp[MAX_STRING];
+        char szTemp2[MAX_STRING];
+
+        if( !SaveAll ) {
+                unsigned long thisWaypoint = 0;
+                float lastHeading = 0;
+
+                unsigned long DeleteWaypoint = 0;
+
+                list<Position>::iterator CurList=FollowPath.begin();
+                list<Position>::iterator EndList=FollowPath.end();
+
+                while(CurList!=EndList) {
+                        thisWaypoint++;
+                         if( FollowPath.size() == thisWaypoint && CurList->Warping ) {
+                                ClearOne(CurList);
+                                break;
+                        } else if( lastHeading == CurList->Heading && thisWaypoint > 2 && !CurList->Warping && !CurList->CheckPoint[0] ) {
+                                DeleteWaypoint = thisWaypoint - 1;
+                                CurList=FollowPath.begin();
+                                thisWaypoint = 0;
+                        } else if( DeleteWaypoint == thisWaypoint ) {
+                                ClearOne(CurList);
+                                CurList=FollowPath.begin();
+                                thisWaypoint = 0;
+                                DeleteWaypoint = 0;
+                        } else {
+                                lastHeading = CurList->Heading;
+                                CurList++;
+                        }
+                }
+        }
+
+        sprintf(INIFileNameTemp,"%s\\%s\\%s.ini",gszINIPath,"MQ2AdvPath",PathZone);
+        if( FollowPath.size() ) {
+                WritePrivateProfileString(PathName,NULL,      NULL,INIFileNameTemp);
+                int i = 1;
+                list<Position>::iterator CurList=FollowPath.begin();
+                list<Position>::iterator EndList=FollowPath.end();
+                while(CurList!=EndList) {
+                        sprintf(szTemp2,"%d",i);
+                        sprintf(szTemp,"%.2f %.2f %.2f %s",CurList->Y,CurList->X,CurList->Z,CurList->CheckPoint);
+                        WritePrivateProfileString(PathName,szTemp2,      szTemp,INIFileNameTemp);
+                        i++;
+                        CurList++;
+                }
+        }
+        ClearAll();
+}
+
+bool LoadPath( PCHAR PathName ) {
+        FollowPath.clear();
+        CHAR INIFileNameTemp[400];
+        sprintf(INIFileNameTemp,"%s\\%s\\%s.ini",gszINIPath,"MQ2AdvPath",GetShortZone(GetCharInfo()->zoneId));
+
+        int i = 1;
+
+        char szTemp[MAX_STRING] = {0};
+        char szTemp3[MAX_STRING] = {0};
+        do {
+                char szTemp2[MAX_STRING] = {0};
+                char szTemp3[MAX_STRING] = {0};
+                sprintf(szTemp,"%d",i);
+                GetPrivateProfileString(PathName,szTemp,NULL,szTemp2,MAX_STRING,INIFileNameTemp);
+                if( szTemp2[0]==0 ) break;
+                Position TempPosition;
+
+                GetArg(szTemp3,szTemp2,1);
+                        TempPosition.Y = (FLOAT)atof(szTemp3);
+                GetArg(szTemp3,szTemp2,2);
+                        TempPosition.X = (FLOAT)atof(szTemp3);
+                GetArg(szTemp3,szTemp2,3);
+                        TempPosition.Z = (FLOAT)atof(szTemp3);
+                GetArg(szTemp3,szTemp2,4);
+                        strcpy(TempPosition.CheckPoint,szTemp3);
+
+                TempPosition.Heading = 0;
+                TempPosition.Warping = 0;
+
+                FollowPath.push_back(TempPosition);
+
+                i++;
+        }
+        while(true);
+        return FollowPath.size()?true:false;
+}
+
+VOID FollowSpawn() {
+        if( FollowPath.size() ) {
+                if( GetDistance3D(MeMonitorX,MeMonitorY,MeMonitorZ,GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,GetCharInfo()->pSpawn->Z) > 50 ) {
+                        list<Position>::iterator CurList=FollowPath.begin();
+                        list<Position>::iterator EndList=FollowPath.end();
+                        do{
+                                if(CurList == EndList ) break;
+                                if(CurList->Warping) break;
+                                ClearOne(CurList);
+                        }
+                        while(true);
+                        WriteChatf("[MQ2AdvPath] Warping Detected on SELF");
+                }
+                if( !FollowPath.size() ) return;
+
+                list<Position>::iterator CurList=FollowPath.begin();
+                list<Position>::iterator EndList=FollowPath.end();
+
+                HWND EQhWnd=*(HWND*)EQADDR_HWND;
+                if (EQW_GetDisplayWindow) EQhWnd=EQW_GetDisplayWindow();
+
+                bool run = false;
+
+                if( CurList->Warping && GetDistance3D(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,GetCharInfo()->pSpawn->Z,CurList->X,CurList->Y,CurList->Z) > 50 ) {
+                        if ( !MonitorWarp ) {
+                                WriteChatf("[MQ2AdvPath] Warping Wating");
+                                DoStop();
+                        }
+                        MonitorWarp = true;
+                        return;
+                }
+                MonitorWarp = false;
+
+                if(PSPAWNINFO pSpawn = (PSPAWNINFO)GetSpawnByID(MonitorID)) {
+                        if( GetDistance3D(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,GetCharInfo()->pSpawn->Z,pSpawn->X,pSpawn->Y,pSpawn->Z) >= 50 ) run = true;
+                        if( GetDistance3D(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,GetCharInfo()->pSpawn->Z,pSpawn->X,pSpawn->Y,pSpawn->Z) <= FollowSpawnDistance ) {
+                                DoStop();
+                                return;
+                        }
+                } else if( (FollowPath.size()*DISTANCE_BETWEN_LOG) >= 20 ) run = true;
+//               else if( GetDistance3D(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,GetCharInfo()->pSpawn->Z,CurList->X,CurList->Y,CurList->Z) >= 20 ) run = true;
+
+//              if( ( GetForegroundWindow()==EQhWnd && GetDistance(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,CurList->X,CurList->Y) > DISTANCE_BETWEN_LOG ) || ( GetForegroundWindow()!=EQhWnd && GetDistance(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,CurList->X,CurList->Y) > (DISTANCE_BETWEN_LOG+10) ) ) {
+                if( GetDistance(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,CurList->X,CurList->Y) > DISTANCE_BETWEN_LOG+DistanceMod ) {
+                        LookAt(CurList->X,CurList->Y,CurList->Z);
+                        if( (PauseDoor - (long)clock()) < 300 ) {
+                                if ( run ) DoFwd(true);
+                                else DoFwd(true,true);
+                        }
+
+                        OpenDoor();
+                        FollowIdle = 0;
+                } else {
+                                ClearOne(CurList);
+                                if( CurList != EndList ) {
+                                        if(CurList->Warping) return;
+                                        // Clean up lag
+                                        ClearLag();
+                                } else {
+                                        DoStop();
+                                        if( !MonitorID ) {
+                                                DoOpenDoor = true;
+                                                ClearAll();
+                                        }
+                                }
+                }
+        }
+}
+
+VOID FollowWaypointsInit(float smart) {
+        if(smart) {
+                list<Position>::iterator CurList=FollowPath.begin();
+                list<Position>::iterator EndList=FollowPath.end();
+                int i = 1;
+                while(CurList!=EndList) {                       
+                        if( GetDistance3D(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,GetCharInfo()->pSpawn->Z,CurList->X,CurList->Y,CurList->Z) < smart ) {
+                                smart = GetDistance3D(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,GetCharInfo()->pSpawn->Z,CurList->X,CurList->Y,CurList->Z);
+                                PlayWaypoint = i;
+                        }
+                        i++;
+                        CurList++;
+                }
+        } else {
+                if(PlayReverse) PlayWaypoint = FollowPath.size();
+                else PlayWaypoint = 1;
+        }
+}
+
+VOID FollowWaypoints() {
+        if( FollowPath.size() ) {
+                list<Position>::iterator CurList=FollowPath.begin();
+                list<Position>::iterator EndList=FollowPath.end();
+
+                HWND EQhWnd=*(HWND*)EQADDR_HWND;
+                if (EQW_GetDisplayWindow) EQhWnd=EQW_GetDisplayWindow(); 
+
+                long WaypointIndex=1;
+                do{
+                        if(CurList == EndList) break;
+                        if(WaypointIndex == PlayWaypoint) {
+//                              if( ( GetForegroundWindow()==EQhWnd && GetDistance(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,CurList->X,CurList->Y) > DISTANCE_BETWEN_LOG ) || ( GetForegroundWindow()!=EQhWnd && GetDistance(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,CurList->X,CurList->Y) > (DISTANCE_BETWEN_LOG+10) ) ) 
+                                if( GetDistance(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,CurList->X,CurList->Y) > DISTANCE_BETWEN_LOG+DistanceMod ) {
+                                        LookAt(CurList->X,CurList->Y,CurList->Z);
+                                        if( (PauseDoor - (long)clock()) < 300 ) DoFwd(true);
+                                        OpenDoor();
+                                        FollowIdle = 0;
+                                        break;
+                                } else {
+                                        if( ( !PlayReverse && FollowPath.size() == PlayWaypoint ) || ( PlayReverse && WaypointIndex == 1 ) ) {
+                                                if(PlayLoop) {
+                                                        if(PlayReverse) PlayWaypoint = FollowPath.size();
+                                                        else PlayWaypoint = 1;
+                                                } else {
+                                                        ClearAll();
+                                                }
+                                        }
+                                        if (GetForegroundWindow()==EQhWnd) {
+                                                if(PlayReverse) PlayWaypoint--;
+                                                else PlayWaypoint++;
+                                        } else {
+                                                if(PlayReverse) PlayWaypoint = PlayWaypoint -3;
+                                                else PlayWaypoint = PlayWaypoint +3;
+
+                                                if((long)FollowPath.size() < PlayWaypoint ) PlayWaypoint = FollowPath.size();
+                                                else if(PlayWaypoint < 1 ) PlayWaypoint = 1;
+                                        }
+                                        break;
+                                }
+                        }
+                        WaypointIndex++;
+                        CurList++;
+                }
+                while(true);
+        }
+}
+
+VOID ClearLag() {
+        if( FollowPath.size() ) {
+                list<Position>::iterator CurList=FollowPath.begin();
+                list<Position>::iterator LastList;
+                list<Position>::iterator EndList=FollowPath.end();
+
+                if( CurList != EndList ) {
+                        if(CurList->Warping) return;
+                        if( InFront(CurList->X,CurList->Y, 100, true) ) {
+                                CurList++;
+                                for(int LagCount=0; LagCount<15; LagCount++) {
+                                        if( CurList != EndList ) {
+                                                if( ( InFront(CurList->X,CurList->Y, 100, false) && LagCount < 10  ) || ( InFront(CurList->X,CurList->Y, 50, false) && LagCount >= 10 ) ) {
+                                                        DebugSpewAlways("MQ2AdvPath::Removing lag() %d",LagCount);
+                                                        CurList=FollowPath.begin();
+                                                        for(int LagCount2=0; LagCount2<=LagCount; LagCount2++) ClearOne(CurList);
+                                                        return;
+                                                }
+                                        } else {
+                                                return;
+                                        }
+                                        CurList++;
+                                }
+                        }
+                }
+        }
+}
+
+VOID StuckCheck(bool reset) {
+        static time_t JumpTimer = time(NULL);
+        static time_t StuckMonitor = time(NULL);
+
+        static bool Jump = true;
+
+        static float StuckMonitorX = 0;
+        static float StuckMonitorY = 0;
+        if(!gbInZone || !GetCharInfo() || !GetCharInfo()->pSpawn) return;
+        if( FollowPath.size() && UseStuckLogic && !reset && StatusState == STATUS_ON && ( FollowState == FOLLOW_PLAYING || FollowState == FOLLOW_FOLLOWING ) ) {
+                list<Position>::iterator CurList=FollowPath.begin();
+                if (FollowState == FOLLOW_PLAYING) {
+                        list<Position>::iterator EndList=FollowPath.end();
+                        long WaypointIndex=1;
+                        do{
+                                if(CurList == EndList) return;
+                                if(WaypointIndex != PlayWaypoint) {
+                                        WaypointIndex++;
+                                        CurList++;
+                                } else break;
+                        }
+                        while(true);
+                }
+
+                int TimerMod = 2;
+                if( CurList->Z > GetCharInfo()->pSpawn->Z+5 ) TimerMod = 5;
+
+                if ( FindSpeed(GetCharInfo()->pSpawn) && StatusState == STATUS_ON && !GetCharInfo()->Stunned && GetCharInfo()->pSpawn->SpeedMultiplier != -10000 ) {
+                                float pulseMoved=GetDistance(MeMonitorX,MeMonitorY);
+                                float expectedPulseMoved = FindSpeed(GetCharInfo()->pSpawn)/6/(thisClock-lastClock);
+                                time_t now = time(NULL);
+                                if ( Jump && !GetCharInfo()->pSpawn->Levitate && !GetCharInfo()->pSpawn->UnderWater && ( !pulseMoved || ( pulseMoved < 0.1 && pulseMoved < expectedPulseMoved ) ) && JumpTimer+1 < now ) {
+                                        Jump = false;
+                                        JumpTimer = time(NULL);
+                                        MQ2Globals::ExecuteCmd(FindMappableCommand("JUMP"),1,0);
+                                        MQ2Globals::ExecuteCmd(FindMappableCommand("JUMP"),0,0);
+                                        DoOpenDoor = true;
+                                }
+
+                                if ( GetDistance(StuckMonitorX,StuckMonitorY) > 2 ) {
+                                        reset = true;
+                                } else if ( ( !pulseMoved || ( pulseMoved < 0.1 && pulseMoved < expectedPulseMoved ) ) && StuckMonitor+TimerMod < now ) {
+                                        StuckMonitor = time(NULL);
+                                        WriteChatf("[MQ2AdvPath] Stuck Detected!!");
+                                        ClearAll();
+                                }
+                } else reset = true;
+        } else reset = true;
+        if( reset ) {
+                Jump = true;
+                StuckMonitorX = GetCharInfo()->pSpawn->X;
+                StuckMonitorY = GetCharInfo()->pSpawn->Y;
+                StuckMonitor = time(NULL);
+                JumpTimer = time(NULL);
+        }
+}
+
+VOID RecordingWaypoints() {
+        if(MonitorID) {
+                if(PSPAWNINFO pSpawn = (PSPAWNINFO)GetSpawnByID(MonitorID)) {
+                        if( GetDistance3D(MonitorX,MonitorY,MonitorZ,pSpawn->X,pSpawn->Y,pSpawn->Z) > 100 ) {
+                                WriteChatf("[MQ2AdvPath] Warping Detected on %s",pSpawn->Name);
+                                AddWaypoint(MonitorID,true);
+                        } else if( GetDistance3D(MonitorX,MonitorY,MonitorZ,pSpawn->X,pSpawn->Y,pSpawn->Z) >= DISTANCE_BETWEN_LOG ) AddWaypoint(MonitorID);
+                }
+        }
+}
+
+class MQ2AdvPathType : public MQ2Type {
+        private:
+                char Temps[MAX_STRING];
+        public:
+                enum AdvPathMembers {
+                        Active=1,
+                        State=2,
+                        Waypoints=3,
+                        NextWaypoint=4,
+                        Y=5,
+                        X=6,
+                        Z=7,
+                        Monitor=8,
+                        Idle=9,
+                        Length=10,
+                        Following=11,
+                        Playing=12,
+                        Recording=13,
+                        Status=14,
+                        Paused=15,
+                        WaitingWarp=16,
+                        StopDistance=17,
+                        CheckPoint=18
+                };
+                MQ2AdvPathType():MQ2Type("AdvPath") {
+                        TypeMember(Active);
+                        TypeMember(State);
+                        TypeMember(Waypoints);
+                        TypeMember(NextWaypoint);
+                        TypeMember(Y);
+                        TypeMember(X);
+                        TypeMember(Z);
+                        TypeMember(Monitor);
+                        TypeMember(Idle);
+                        TypeMember(Length);
+                        TypeMember(Following);
+                        TypeMember(Playing);
+                        TypeMember(Recording);
+                        TypeMember(Status);
+                        TypeMember(Paused);
+                        TypeMember(WaitingWarp);
+                        TypeMember(StopDistance);
+                        TypeMember(CheckPoint);
+                }
+                bool GetMember(MQ2VARPTR VarPtr, PCHAR Member, PCHAR Index, MQ2TYPEVAR &Dest) {
+                        list<Position>::iterator CurList=FollowPath.begin();
+                        list<Position>::iterator EndList=FollowPath.end();
+                        int i = 1;
+                        float TheLength = 0;
+
+                        PMQ2TYPEMEMBER pMember=MQ2AdvPathType::FindMember(Member); 
+                        if(pMember) switch((AdvPathMembers)pMember->ID) {
+                                case Active:                                                                            // Plugin on and Ready
+                                        Dest.DWord=(gbInZone && GetCharInfo() && GetCharInfo()->pSpawn);
+                                        Dest.Type=pBoolType;
+                                        return true;
+                                case State:                                                                                     // FollowState, 0 = off, 1 = Following, 2 = Playing, 3 = Recording
+                                        Dest.DWord=FollowState;
+                                        Dest.Type=pIntType;
+                                        return true;
+                                case Waypoints:                                                                         // Number of Waypoints
+                                        Dest.DWord=FollowPath.size();
+                                        Dest.Type=pIntType;
+                                        return true;
+                                case NextWaypoint:                                                                      // Next Waypoint
+                                        Dest.DWord=PlayWaypoint;
+                                        Dest.Type=pIntType;
+                                        return true;
+                                case Y:                                                                                         // Waypoint Y
+                                        while(CurList!=EndList) {                                               
+                                                if( ( i == atol(TloIndex) || ( TloIndex[0] != 0 && !stricmp(TloIndex,CurList->CheckPoint) ) ) || (  i == atol(Index) || ( Index[0] != 0 && !stricmp(Index,CurList->CheckPoint) ) ) ) {
+                                                        Dest.Float=CurList->Y;
+                                                        Dest.Type=pFloatType;
+                                                        return true;
+                                                }
+                                                i++;
+                                                CurList++;
+                                        }
+                                        strcpy(Temps,"NULL");
+                                        Dest.Type=pStringType;
+                                        Dest.Ptr=Temps;
+                                        return true;
+                                case X:                                                                                         // Waypoint X
+                                        while(CurList!=EndList) {
+                                                if( ( i == atol(TloIndex) || ( TloIndex[0] != 0 && !stricmp(TloIndex,CurList->CheckPoint) ) ) || (  i == atol(Index) || ( Index[0] != 0 && !stricmp(Index,CurList->CheckPoint) ) ) ) {
+                                                        Dest.Float=CurList->X;
+                                                        Dest.Type=pFloatType;
+                                                        return true;
+                                                }
+                                                i++;
+                                                CurList++;
+                                        }
+                                        strcpy(Temps,"NULL");
+                                        Dest.Type=pStringType;
+                                        Dest.Ptr=Temps;
+                                        return true;
+                                case Z:                                                                                         // Waypoint Z
+                                        while(CurList!=EndList) {
+                                                if( ( i == atol(TloIndex) || ( TloIndex[0] != 0 && !stricmp(TloIndex,CurList->CheckPoint) ) ) || (  i == atol(Index) || ( Index[0] != 0 && !stricmp(Index,CurList->CheckPoint) ) ) ) {
+                                                        Dest.Float=CurList->Z;
+                                                        Dest.Type=pFloatType;
+                                                        return true;
+                                                }
+                                                i++;
+                                                CurList++;
+                                        }
+                                        strcpy(Temps,"NULL");
+                                        Dest.Type=pStringType;
+                                        Dest.Ptr=Temps;
+                                        return true;
+                                case Monitor:                                                                           // Spawn your following
+                                        Dest.Ptr=(PSPAWNINFO)GetSpawnByID(MonitorID);
+                                        Dest.Type=pSpawnType;
+                                        return true;
+                                case Idle:                                                                                      // FollowIdle time when following and not moving
+                                        Dest.DWord=(FollowState && FollowIdle)?(((long)clock()-FollowIdle)/1000):0;
+                                        Dest.Type=pIntType;
+                                        return true;
+                                case Length:                                                                            // Estimated length off the follow path
+                                        if( FollowPath.size() ) {
+                                                list<Position>::iterator CurList=FollowPath.begin();
+                                                TheLength = GetDistance(GetCharInfo()->pSpawn->X,GetCharInfo()->pSpawn->Y,CurList->X,CurList->Y);
+                                                if( FollowPath.size() > 1 )     TheLength = ((FollowPath.size()-1)*DISTANCE_BETWEN_LOG)+TheLength;
+                                        }
+                                        Dest.Float=TheLength;
+                                        Dest.Type=pFloatType;
+                                        return true;
+                                case Following:
+                                        Dest.DWord=(FollowState==FOLLOW_FOLLOWING);
+                                        Dest.Type=pBoolType;
+                                        return true;
+                                case Playing:
+                                        Dest.DWord=(FollowState==FOLLOW_PLAYING);
+                                        Dest.Type=pBoolType;
+                                        return true;
+                                case Recording:
+                                        Dest.DWord=(FollowState==FOLLOW_RECORDING);
+                                        Dest.Type=pBoolType;
+                                        return true;
+                                case Status:
+                                        Dest.DWord=StatusState;
+                                        Dest.Type=pIntType;
+                                        return true;
+                                case Paused:
+                                        Dest.DWord=(StatusState==STATUS_PAUSED);
+                                        Dest.Type=pBoolType;
+                                        return true;
+                                case WaitingWarp:
+                                        Dest.DWord=MonitorWarp;
+                                        Dest.Type=pBoolType;
+                                        return true;
+                                case StopDistance:
+                                        Dest.DWord=(DISTANCE_BETWEN_LOG+DistanceMod);
+                                        Dest.Type=pIntType;
+                                        return true;
+                                case CheckPoint:
+                                        strcpy(Temps,"NULL");
+                                        while(CurList!=EndList) {                                               
+                                                if( ( i == atol(TloIndex) || ( TloIndex[0] != 0 && !stricmp(TloIndex,CurList->CheckPoint) ) ) || (  i == atol(Index) || ( Index[0] != 0 && !stricmp(Index,CurList->CheckPoint) ) ) ) {
+                                                        strcpy(Temps,CurList->CheckPoint);
+                                                        break;
+                                                }
+                                                i++;
+                                                CurList++;
+                                        }
+
+                                        Dest.Type=pStringType;
+                                        Dest.Ptr=Temps;
+                                        return true;
+                        }
+                        strcpy(Temps,"NULL");
+                        Dest.Type=pStringType;
+                        Dest.Ptr=Temps;
+                        return true;
+                }
+                bool ToString(MQ2VARPTR VarPtr, PCHAR Destination) {
+                        strcpy(Destination,"TRUE");
+                        return true;
+                } 
+                bool FromData(MQ2VARPTR &VarPtr, MQ2TYPEVAR &Source) {
+                        return false;
+                } 
+                bool FromString(MQ2VARPTR &VarPtr, PCHAR Source) {
+                        return false;
+                } 
+                ~MQ2AdvPathType() { } 
+}; 
+
+BOOL dataAdvPath(PCHAR szName, MQ2TYPEVAR &Dest) {
+        TloIndex = szName;
+
+        Dest.DWord=1;
+        Dest.Type=pAdvPathType;
+        return true;
+}
+
+VOID ReadINI() {
+        DebugSpewAlways("MQ2CastTimer::ReadINI()");
+        if(!gbInZone || !GetCharInfo() || !GetCharInfo()->pSpawn) return;
+        char szSettingINISection[MAX_STRING];
+        sprintf(szSettingINISection,"Settings.%s.%s",EQADDR_SERVERNAME,GetCharInfo()->pSpawn->Name);
+
+        AutoStopFollow = GetPrivateProfileInt(szSettingINISection,"AutoStopFollow",      0,INIFileName);
+        AutoStopPath = GetPrivateProfileInt(szSettingINISection,"AutoStopPath",      0,INIFileName);
+        UseStuckLogic = 0x00000001 & GetPrivateProfileInt(szSettingINISection,"UseStuckLogic",      1,INIFileName);
+
+        WritePrivateProfileString(szSettingINISection,"AutoStopFollow",      itoa(AutoStopFollow,         Buffer,10),INIFileName);
+        WritePrivateProfileString(szSettingINISection,"AutoStopPath",      itoa(AutoStopPath,            Buffer,10),INIFileName);
+        WritePrivateProfileString(szSettingINISection,"UseStuckLogic",      itoa(UseStuckLogic,         Buffer,10),INIFileName);
+}
+
+// Called once, when the plugin is to initialize
+PLUGIN_API VOID InitializePlugin(VOID) {
+        DebugSpewAlways("Initializing MQ2AdvPath");
+        if (EQWhMod=GetModuleHandle("eqw.dll")) EQW_GetDisplayWindow=(fEQW_GetDisplayWindow)GetProcAddress(EQWhMod,"EQW_GetDisplayWindow");
+
+    AddCommand("/afollow",MQFollowCommand);
+        AddCommand("/play",MQPlayCommand);
+        AddCommand("/record",MQRecordCommand);
+        AddCommand("/arecord",MQRecordCommand);
+        pAdvPathType = new MQ2AdvPathType;
+        AddMQ2Data("AdvPath",dataAdvPath);
+        sprintf(Buffer,"%s\\%s",gszINIPath,"MQ2AdvPath");
+        mkdir(Buffer);
+        CreateBinds();
+        ReadINI();
+}
+
+// Called once, when the plugin is to shutdown
+PLUGIN_API VOID ShutdownPlugin(VOID) {
+        DebugSpewAlways("Shutting down MQ2AdvPath");
+
+        RemoveCommand("/afollow");
+        RemoveCommand("/play");
+        RemoveCommand("/record");
+        RemoveCommand("/arecord");
+        delete pAdvPathType;
+        RemoveMQ2Data("AdvPath");
+        DestroyBinds();
+
+        ClearAll();
+}
+
+// This is called every time MQ pulses
+PLUGIN_API VOID OnPulse(VOID) {
+        static int CameraMode = 0;
+        if(!gbInZone || !GetCharInfo() || !GetCharInfo()->pSpawn) return;
+
+        thisClock = (unsigned long)clock();
+        DistanceMod = ((thisClock-lastClock)*(thisClock-lastClock))/1000/2;
+
+        if ( PathNameZone[0] && MonitorZoneID != GetCharInfo()->zoneId ) {
+                WriteChatf("[MQ2AdvPath] Zoned Loading next path (%s)",PathNameZone);
+                MonitorZoneID = GetCharInfo()->zoneId;
+                if( LoadPath(PathNameZone) ) {
+                        FollowWaypointsInit(100000.00);
+                } else {
+                        ClearAll();
+                }
+        } else if( SpawnNameZone[0] && MonitorZoneID != GetCharInfo()->zoneId ) {
+                PSPAWNINFO sSpawn = NULL;                       // Search Spawn
+                PSPAWNINFO pSpawn = NULL;                       // Output Spawn
+
+                SEARCHSPAWN ssSpawn;                            // Search String ( Spawn )
+                ClearSearchSpawn(&ssSpawn);
+                ssSpawn.ZRadius=100;
+                ssSpawn.FRadius=100;
+                for (int i=0; i<50; i++) {
+                        if (pSpawn = NthNearestSpawn(&ssSpawn,i,(PSPAWNINFO)pCharSpawn)) if (pSpawn->Type == SPAWN_PLAYER) {
+                                if (!stricmp(SpawnNameZone,pSpawn->Name)) {
+                                        MonitorZoneID = GetCharInfo()->zoneId;
+                                        MonitorID = pSpawn->SpawnID;
+                                        AddWaypoint(MonitorID);
+
+                                        MeMonitorX = GetCharInfo()->pSpawn->X; // MeMonitorX monitor your self
+                                        MeMonitorY = GetCharInfo()->pSpawn->Y; // MeMonitorY monitor your self
+                                        MeMonitorZ = GetCharInfo()->pSpawn->Z; // MeMonitorZ monitor your self
+                                        StuckCheck(true);
+                                }
+                        }
+                }
+                return;
+        }
+
+        if ( DoOpenDoor ) {
+                #define CAMERA_MODE *(int*)(((char*)pinstViewActor)+0x14)
+                if ( (int)CAMERA_MODE != 0 ) {
+                        CameraMode = (int)CAMERA_MODE;
+                        CAMERA_MODE=0;
+                } else {
+                        MQ2Globals::ExecuteCmd(FindMappableCommand("USE"),0,0);
+                        MQ2Globals::ExecuteCmd(FindMappableCommand("USE"),1,0);
+                        MQ2Globals::ExecuteCmd(FindMappableCommand("USE"),0,0);
+
+                        if ( CameraMode != 0 ) {
+                                CAMERA_MODE = CameraMode;
+                                CameraMode = 0;
+                        }
+                        DoOpenDoor=false;
+                }
+        }
+
+        RecordingWaypoints();
+        if (FollowState == FOLLOW_FOLLOWING && StatusState == STATUS_ON ) FollowSpawn();
+        else if (FollowState == FOLLOW_PLAYING && StatusState == STATUS_ON ) FollowWaypoints();
+
+        StuckCheck();
+        lastClock = (unsigned long)clock();
+
+        MeMonitorX = GetCharInfo()->pSpawn->X; // MeMonitorX monitor your self
+        MeMonitorY = GetCharInfo()->pSpawn->Y; // MeMonitorY monitor your self
+        MeMonitorZ = GetCharInfo()->pSpawn->Z; // MeMonitorZ monitor your self
+
+        if ( FollowPath.size() ) {
+                list<Position>::iterator CurList=FollowPath.begin();
+                list<Position>::iterator EndList=FollowPath.end();
+
+                Position LastList;                      // FollowPath
+                
+                if (FollowState == FOLLOW_FOLLOWING) {
+                        LastList.Z = GetCharInfo()->pSpawn->Z;
+                        LastList.Y = GetCharInfo()->pSpawn->Y;
+                        LastList.X = GetCharInfo()->pSpawn->X;
+                } else {
+                        LastList.Z = CurList->Z;
+                        LastList.Y = CurList->Y;
+                        LastList.X = CurList->X;
+                }
+                MapClear();
+                while(CurList!=EndList) {
+                        pFollowPath.push_back(InitLine());
+                        if(!pFollowPath[pFollowPath.size()-1]) break;
+
+                        pFollowPath[pFollowPath.size()-1]->Layer=3;
+                        if ( CurList->Warping ){
+                                pFollowPath[pFollowPath.size()-1]->Color.ARGB=0xFFFF0000;
+                        } else {
+                                pFollowPath[pFollowPath.size()-1]->Color.ARGB=0xFF00FF00;
+                        }
+                        pFollowPath[pFollowPath.size()-1]->Start.Z=LastList.Z;
+                        pFollowPath[pFollowPath.size()-1]->End.Z=CurList->Z;
+
+                        pFollowPath[pFollowPath.size()-1]->Start.X=-LastList.X;
+                        pFollowPath[pFollowPath.size()-1]->End.X=-CurList->X;
+
+                        pFollowPath[pFollowPath.size()-1]->Start.Y=-LastList.Y;
+                        pFollowPath[pFollowPath.size()-1]->End.Y=-CurList->Y;
+
+                        LastList.Z = CurList->Z;
+                        LastList.Y = CurList->Y;
+                        LastList.X = CurList->X;
+
+                        CurList++;
+                }
+        } else if (pFollowPath.size()) {
+                MapClear();
+        }
+}
+
+PLUGIN_API VOID OnEndZone(VOID) {
+        DebugSpewAlways("MQ2AdvPath::OnZoned()");
+        if( FollowState == FOLLOW_RECORDING && StatusState && SavePathName[0] != NULL && SavePathZone[0] != NULL )
+                SavePath(SavePathName,SavePathZone);
+
+        ReadINI();
+
+        CreateBinds();
+        if( PathNameZone[0] ) {
+                MonitorZoneID = 0;
+                FollowPath.clear();
+                DoStop();
+                MapClear();
+                StuckCheck(true);
+        } else if( SpawnNameZone[0] ) {
+                WriteChatf("[MQ2AdvPath] Zoned now wating on (%s)",SpawnNameZone);
+                FollowPath.clear();
+                DoStop();
+                MapClear();
+                MonitorID = 0;
+                MonitorWarp = false;
+                StuckCheck(true);
+        } else {
+                ClearAll();
+        }
+}
+
+PLUGIN_API VOID OnRemoveSpawn(PSPAWNINFO pSpawn) {
+        DebugSpewAlways("MQ2AdvPath::OnRemoveSpawn(%s)",pSpawn->Name);
+        if( pSpawn->SpawnID == MonitorID ) MonitorID = 0;
+}
+
+PLUGIN_API DWORD OnIncomingChat(PCHAR Line, DWORD Color) {
+        if(!gbInZone || !GetCharInfo() || !GetCharInfo()->pSpawn) return 0;
+        if(!stricmp(Line,"You have been summoned!") && FollowState) {
+                WriteChatf("[MQ2AdvPath] summon Detected");
+                ClearAll();
+        } else if(!strnicmp(Line,"You will now auto-follow",24)) DoLft(true);
+        else if(!strnicmp(Line,"You are no longer auto-follow",29) || !strnicmp(Line,"You must first target a group member to auto-follow.",52) ) {
+                if (FollowState) MQFollowCommand(GetCharInfo()->pSpawn, "off"); 
+                else MQFollowCommand(GetCharInfo()->pSpawn, "on");      
+        }
+        return 0;
+}
