@@ -3,6 +3,14 @@
 | # 
 | # General include file used by almost every player.
 
+
+|- TODO
+|- Recast times in buff.inc
+|- Maintank heal if in same group
+|- Look in pDootTarget for EQSwitch..also, MQ2Navigation (formerly AdvPath)
+
+
+
 | ***********
 | * Includes
 | ***********
@@ -23,6 +31,10 @@
 | * Events
 | *********
 
+|- Event for MGB HoT's
+#Event MGBHoT			"<#*#> #*# MGB HoT"
+#Event MGBHoT			"[#*#(msg)] MGB HoT"
+
 |- The event to trigger the call for rez and corpse looting
 #Event ImDead           "You have been slain by#*#" 
 
@@ -32,7 +44,7 @@
 
 |- Raid invites
 #Event RaidInvited		"#*#invites you to join a raid.#*#"
-#Event RaidInvite		"#1# tells the guild, '#*#raid invite#*#'"
+#Event RaidInvite		"#1# tells the guild, 'raid invite'"
 
 |- These event's are used to trigger a chat event via BCS
 #Event IRC              "<#1#> #*# #2#"
@@ -116,6 +128,9 @@
 #Event Rez				"#1# tells you, 'rez'"
 #Event Rez				"#1# tells the group, 'rez'"
 
+|- Testing
+#Event CastRoutine		"[#*#(msg)] CastThis #1#"
+
 | #################################################################
 | # Will move to and hail the Chat Sender's target.
 | #
@@ -187,6 +202,9 @@ sub Event_Stop(Stop, Sender)
 			/declare MountItem string local ${Macro.Return}
 			/if (${MountItem.NotEqual[NULL]}) /call cast ${MountItem} item
 		}
+		
+		/varset Attacking FALSE
+		/attack off
 	}
 	
 /return
@@ -398,7 +416,7 @@ Sub GetAttackTarget
 	/target id ${AttackTarget}
 	/delay 3s ${Target.ID} == ${AttackTarget}
 	
-	/if (${Target.ID} != ${AttackTarget} && ${Spawn[id ${AttackTarget}].Name.Find['s_corpse]}) {
+	/if (${Target.ID} != ${AttackTarget} && !${Spawn[id ${AttackTarget}].Name.Find['s_corpse]}) {
 		/goto :GetAttackTarget
 	} else {
 		/varset Attacking FALSE
@@ -1105,7 +1123,7 @@ Sub IniToDynArray(FileName,SectionName,NameOfArray)
 Sub DoClickyWithTimer(string ToClick, int RecastTime)
 	/if (!${Me.Moving} && ${FindItemCount[${ToClick}]} > 0 && ${Target.Distance} <= ${FindItem[${ToClick}].Spell.Range} && (!${Defined[t${FindItem[${ToClick}].Spell.ID}]} || ${t${FindItem[${ToClick}].Spell.ID}} == 0)) {
 		/call Cast "${ToClick}" item
-		/gsay Using item ${ToClick} !@!
+		/gsay Using item ${ToClick} !!!
 		/if ( !${Defined[t${FindItem[${ToClick}].Spell.ID}]} ) {
 			/declare t${FindItem[${ToClick}].Spell.ID}    timer    outer
 		}
@@ -1132,8 +1150,74 @@ Sub Event_RaidInvite(string Line, string Sender)
 	/if (${SpawnCount[pc ${Sender}]} < 1) /return
 	
 	/if (${Raid.Leader.Name.Equal[${Me.CleanName}]} || ${Me.Name.Equal[Reno]}) {
-		/target pc ${Sender}
-		/delay 3s ${Target.CleanName.Equal[${Sender}]}
-		/raidinvite
+		/raidinvite ${Sender}
+	}
+/return
+
+| ##
+| #
+| ##
+Sub Event_MGBHoT
+	/if (!${Me.AltAbilityReady[Mass Group Buff]} || !${Me.Class.Name.Equal[Druid]} || !${Me.Class.Name.Equal[Cleric]}) /return
+	
+	/declare MyHoT string local 
+	/if (${Me.Class.Name.Equal[Druid]}) {
+		/varset MyHoT "Spirit of the Wood"
+	} else /if (${Me.Class.Name.Equal[Cleric]}) {dwdw
+		/varset MyHoT "Celestial Regeneration"
+	}
+	
+	/if (!${Me.AltAbilityReady[${MyHoT}]}) /return
+	
+	/gu MGB ${MyHoT} INCOMING!
+	
+	/call cast "Mass Group Buff" alt
+	/call cast ${MyHoT} alt
+/return
+
+| ##
+| #
+| ##
+Sub AddMe 
+	/if (${Me.Class.Name.Equal[Cleric]}) {
+		/bct MQCenter add me
+	}
+/return
+
+| ##
+| #
+| # this format isguaraunteed to have all viable information so no need to verify
+| # cast packet.... ToTarget|ToCast|Type|GemNo|Retry
+| ##
+Sub Event_CastRoutine(string Line, string packet)
+	/declare ToTarget int local ${packet.Arg[1,|]}
+	/declare ToCast string local ${packet.Arg[2,|]}
+	/declare CastType string local ${packet.Arg[3,|]}
+	/declare GemNum string local ${packet.Arg[4,|]}
+	/declare Retry string local ${packet.Arg[5,|]}
+	
+	/echo The values are:
+	/echo ${ToTarget}
+	/echo ${ToCast}
+	/echo ${CastType}
+	/echo ${GemNum}
+	/echo ${Retry}
+	
+	/guildsay Casting ${ToCast} on ${Spawn[id ${ToTarget}]} after I mem'd it in ${GemNum} !!!
+	/if (${ToTarget} != 0) {
+		/target id ${ToTarget}
+		/delay 2s (${Target.ID} == ${ToTarget})
+		/if (${Target.ID} != ${ToTarget}) /return
+	}
+	
+	/if (${Retry.Find[s]} > 0) {
+		/call Cast "${ToCast}" "${GemNum}" "${Retry}"
+	} else /if (${GemNum.Find[gem]} > 0) {
+		/echo HERE I AM!
+		/call Cast "${ToCast}" "${GemNum}"
+	} else /if (${CastType.Find[spell]} > 0) {
+		/call Cast "${ToCast}"
+	} else {
+		/call Cast "${ToCast}" "${CastType}"
 	}
 /return

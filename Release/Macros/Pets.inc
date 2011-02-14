@@ -40,7 +40,7 @@ Sub BuildPetINI
 | # Check to see if we have a pet and recast if required
 | ##
 Sub CheckPetStatus
-	/if (!${UsePet} || ${Stick.Status.Equal[ON]} || ${Me.Moving}) /return
+	/if (!${UsePet} || ${Stick.Status.Equal[ON]} || ${Me.Moving} || ${Attacking}) /return
 
 	/if (${SpawnCount[${Me.Pet}]} < 1 && ${Me.PctMana} > 70 && !${Attacking}) {
 		/call Cast "${PetSpell}" gem${PetGem} ${Spell[${PetSpell}].RecastTime}s

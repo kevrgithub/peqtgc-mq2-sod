@@ -8,7 +8,7 @@
 | # It can use group heals, but to turn off, merely delete that section from the Ini and it will not try to cast one.
 | #    NOTE: Only does group heals for cleric/paladins anyways
 
-#Event StartCast	"[#1#(msg)]#*#BEGINCASTING#*#"
+#Event StartCast	"[#*#(msg)]#*#BEGINCASTING #1#"
 
 | ######################################
 | # Setup everything before we use it.
@@ -251,8 +251,8 @@ Sub CancelHeal
 | # @PARAM - string HealSpell - The spell to be casted.
 | # @PARAM - string HealTarget - The target to be healed.
 | #######################################################
-Sub CastHeal(string HealSpell, string HealTarget, bool DontStop)
-	/if (!${Defined[DontStop]}) /declare DontStop bool local FALSE
+Sub CastHeal(string HealSpell, string HealTarget, string TargetType)
+	/if (!${Defined[TargetType]}) /declare TargetType string local "pc"
 	|- Is spell ready?
 	/if (${Me.SpellReady[${HealSpell}]}) {
 		|- Do we have mana
@@ -261,7 +261,7 @@ Sub CastHeal(string HealSpell, string HealTarget, bool DontStop)
 			/bca NO MANA TO HEAL ${HealTarget} !!!
 			/return
 		} else {			
-			/target ${HealTarget}
+			/target ${TargetType} ${HealTarget}
 			/delay 2s ${Target.Name.Equal[${HealTarget}]}
 			/if (${Target.Name.NotEqual[${HealTarget}]}) /return
 			
@@ -294,7 +294,7 @@ Sub CheckPets
 			/target ${Group.Member[${i}].Pet}
 		  	/delay 2s ${Target.Name.Equal[${Group.Member[${i}].Pet}]}
 			
-		 	/call CastHeal "${MeleeHeal}" "${Group.Member[${i}].Pet.Name}"
+		 	/call CastHeal "${MeleeHeal}" "${Group.Member[${i}].Pet.Name}" "pet"
 		}		
 	/next i	
 	
@@ -306,9 +306,11 @@ Sub CheckPets
 | ##
 Sub Event_StartCast(string line, string tank) 
 	/if (!${Defined[RotSpell]}) /declare RotSpell string outer "Complete Heal"
+	| /if (!${Defined[RotSpell]}) /declare RotSpell string outer "Holy Light"
 	
 	/if (${SpawnCount[pc ${tank}]} < 1) {
 		/g >>>> ${tank} is not in my zone!! <<<<
+		/return
 	}
 	
 	/target pc ${tank}	
@@ -317,15 +319,18 @@ Sub Event_StartCast(string line, string tank)
 	
 	/if (!${Me.Book[${RotSpell}]}) {
 		/g >>>> I do not have the spell ${RotSpell}! <<<<
+		/return
 	} else /if (${Target.Distance} > ${Spell[${RotSpell}].Range}) {
 		/g >>>> ${tank} IS OUT OF RANGE!! <<<<
+		/return
 	} else /if (${Me.CurrentMana} < ${Spell[${RotSpell}].Mana}) {
 		/g >>>> NOT ENOUGH MANA TO CAST ${RotSpell} <<<<
+		/return
 	} 
 	
 	/g Casting ${RotSpell} ON ${tank}
 	/call cast ${RotSpell} gem1 3s
-	
+	/doevents flush StartCast
 /return
 
 | ##
@@ -336,8 +341,7 @@ Sub BeginCHRotation
 	/if (!${Defined[BHServer]}) /declare BHServer string outer "192.168.1.136"
 	/if (!${Defined[BHPort]}) /declare BHPort int outer 21
 	
-	/bhcmd connect ${BHServer} ${BHPort}
-	
+	/bhcmd connect ${BHServer} ${BHPort}	
 /return
 
 | ##

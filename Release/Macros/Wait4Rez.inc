@@ -10,6 +10,7 @@
 Sub Wait4Rez
 	/echo Awaiting rez: auto-accepting, and looting my corpse
 	/consent group
+	/loadspell ${Me.Class.Name}
 	/delay 25
 	
 :rezmeffs
