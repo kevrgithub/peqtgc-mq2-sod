@@ -34,14 +34,12 @@
 //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=//
 //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=//
 
-#ifndef PLUGIN_API
   #include "../MQ2Plugin.h"
   PreSetup(PLUGIN_NAME);
   PLUGIN_VERSION(PLUGIN_VERS);
   #include <map>
   #include <string>
   #include "../Blech/Blech.h"
-#endif PLUGIN_API
 
 #define NOID                   -1
 #define delay                 250
@@ -2227,25 +2225,35 @@ void Configure() {
   long Class=GetCharInfo2()->Class;
   long Races=GetCharInfo2()->Race;
   long Level=GetCharInfo2()->Level;
+  
   sprintf(INIFileName,"%s\\%s_%s.ini",gszINIPath,EQADDR_SERVERNAME,GetCharInfo()->Name);
   sprintf(section,"%s_%d_%s_%s",PLUGIN_NAME,Level,pEverQuest->GetRaceDesc(Races),pEverQuest->GetClassDesc(Class));
+  
   Shrouded=GetCharInfo2()->Shrouded; if(!Shrouded) section[strlen(PLUGIN_NAME)]=0;
+  
   BuffMax=15;
+ 
   if(GetAAIndexByName("Embrace of the Dark Reign"))   BuffMax++;
   else if(GetAAIndexByName("Embrace of the Keepers")) BuffMax++;
+  
   BuffMax+=(AAPoint(GetAAIndexByName("Mystical Attuning")))/5;
   if(SpawnMe()->Level>71) BuffMax++;
   if(SpawnMe()->Level>74) BuffMax++;
+  
   GemsMax=(GetAAIndexByName("Mnemonic Retention"))?9:8;
   HaveHold=GetAAIndexByName("Pet Discipline")?true:false;
   HaveBash=GetAAIndexByName("2 Hand Bash")?true:false;
+  
   BardClass=false;
   char keys[MAX_STRING*5];
   char temp[MAX_STRING];
+  
   Liste::iterator c,i;
   Liste::iterator ec=CmdListe.end();
   Liste::iterator ei=IniListe.end();
+  
   for(c=CmdListe.begin(); c!=ec; c++) (*c).second.Reset();
+  
   for(i=IniListe.begin(); i!=ei; i++) (*i).second.Reset();
 
   idLEOPARDCLAW.Setup (0,0);
@@ -2366,6 +2374,7 @@ void Configure() {
       pkeys+=strlen(pkeys)+1;
     }
   }
+
   Loaded=true;
 }
 
@@ -3576,6 +3585,7 @@ PLUGIN_API VOID InitializePlugin() {
   AddCommand("/KillThis",KillThis); 
   AddCommand("/Melee",Melee); 
   AddCommand("/ThrowIt",ThrowIT); 
+
 }
 
 PLUGIN_API VOID SetGameState(DWORD GameState) {
@@ -3612,6 +3622,7 @@ PLUGIN_API VOID OnPulse(VOID) {
 }
 
 PLUGIN_API VOID ShutdownPlugin() {
+	
   SetGameState(GAMESTATE_UNLOADING);
   RemoveCommand("/EnrageON"); 
   RemoveCommand("/EnrageOFF"); 
@@ -3628,4 +3639,5 @@ PLUGIN_API VOID ShutdownPlugin() {
   delete pMeleeEvent;
   delete pMeleeTypes;
   Bindding(false);
+  
 }
