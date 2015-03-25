@@ -1,0 +1,1 @@
+A private build of MQ2 for use on the emulated EQ server, ProjectEQ.
